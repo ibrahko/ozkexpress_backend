@@ -6,6 +6,9 @@ echo "=== MotoExpress Backend - Démarrage ==="
 echo ">>> Activation PostGIS..."
 python manage.py setup_postgis
 
+echo ">>> Génération des migrations..."
+python manage.py makemigrations --noinput
+
 echo ">>> Migrations..."
 python manage.py migrate --noinput
 
