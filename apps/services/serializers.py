@@ -92,11 +92,13 @@ class RideRequestSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     client_name = serializers.CharField(source="client.get_full_name", read_only=True)
     driver_name = serializers.SerializerMethodField()
+    driver_location = serializers.SerializerMethodField()
+    driver_rating = serializers.SerializerMethodField()
 
     class Meta:
         model = RideRequest
         fields = [
-            "id", "client_name", "driver", "driver_name", "fleet_rental",
+            "id", "client_name", "driver", "driver_name", "driver_location", "driver_rating", "fleet_rental",
             "pickup_address", "pickup_location",
             "dropoff_address", "dropoff_location",
             "passenger_count", "client_has_own_vehicle", "special_instructions",
@@ -113,6 +115,17 @@ class RideRequestSerializer(serializers.ModelSerializer):
     def get_driver_name(self, obj):
         if obj.driver:
             return obj.driver.user.get_full_name()
+        return None
+
+    def get_driver_location(self, obj):
+        if obj.driver and obj.driver.last_known_location:
+            loc = obj.driver.last_known_location
+            return {"lat": loc.y, "lng": loc.x}
+        return None
+
+    def get_driver_rating(self, obj):
+        if obj.driver:
+            return float(obj.driver.rating)
         return None
 
     def create(self, validated_data):
