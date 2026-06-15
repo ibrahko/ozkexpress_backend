@@ -53,8 +53,13 @@ class OTPService:
         """Génère et envoie un OTP. Retourne le succès de l'envoi SMS."""
         otp = cls.create_otp(phone)
 
-        # En développement, on log le code directement
-        if settings.DEBUG:
+        # Mode dev : log le code si DEBUG ou si Twilio non configuré
+        twilio_configured = bool(
+            getattr(settings, 'TWILIO_ACCOUNT_SID', '') and
+            getattr(settings, 'TWILIO_AUTH_TOKEN', '') and
+            getattr(settings, 'TWILIO_PHONE_NUMBER', '')
+        )
+        if settings.DEBUG or not twilio_configured:
             logger.info(">>> OTP DEV [%s] code=%s <<<", phone, otp.code)
             return True
 
