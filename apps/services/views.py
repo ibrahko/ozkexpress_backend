@@ -83,8 +83,61 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], permission_classes=[IsCourier])
     def available(self, request):
-        """GET /api/v1/services/available/ — demandes en attente près du coursier."""
-        qs = ServiceRequest.objects.filter(status=RequestStatus.PENDING).select_related("client")
+        """
+        GET /api/v1/services/available/
+        Retourne les demandes visibles par ce coursier selon le mode d'attribution :
+
+        BROADCAST :
+          - < 1 min : coursier doit être dans broadcast_radius_km autour du départ
+          - ≥ 1 min : escalade → tous les coursiers en ligne la voient
+        DIRECT :
+          - Uniquement le preferred_courier ciblé par le client
+        """
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.contrib.gis.geos import Point
+        from django.contrib.gis.measure import D
+
+        courier = request.user.courier_profile
+        now = timezone.now()
+        escalation_delay = timedelta(minutes=1)
+        pending = ServiceRequest.objects.filter(
+            status=RequestStatus.PENDING
+        ).select_related("client", "preferred_courier")
+
+        # Auto-escalade : si une demande broadcast dépasse 1 min sans acceptation, la marquer
+        to_escalate = pending.filter(
+            assignment_type="broadcast",
+            escalated_at__isnull=True,
+            created_at__lt=now - escalation_delay,
+        )
+        if to_escalate.exists():
+            to_escalate.update(escalated_at=now)
+
+        visible = []
+        courier_location = courier.last_known_location  # Point GIS ou None
+
+        for req in pending:
+            if req.assignment_type == "direct":
+                # Direct : seul le coursier ciblé voit la demande
+                if req.preferred_courier_id == courier.pk:
+                    visible.append(req.pk)
+
+            else:  # broadcast
+                if req.escalated_at:
+                    # Escaladée : tout le monde en ligne la voit
+                    visible.append(req.pk)
+                else:
+                    # Pas encore escaladée : filtrer par distance
+                    if courier_location and req.pickup_location:
+                        dist_km = courier_location.distance(req.pickup_location) * 111  # degrés → km approx
+                        if dist_km <= req.broadcast_radius_km:
+                            visible.append(req.pk)
+                    else:
+                        # Pas de localisation connue → montrer quand même (fallback)
+                        visible.append(req.pk)
+
+        qs = pending.filter(pk__in=visible)
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
 

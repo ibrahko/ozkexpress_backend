@@ -23,11 +23,15 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     client_name = serializers.CharField(source="client.get_full_name", read_only=True)
     courier_name = serializers.SerializerMethodField()
+    courier_location = serializers.SerializerMethodField()
+    courier_rating = serializers.SerializerMethodField()
+    is_escalated = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
         fields = [
-            "id", "client_name", "courier", "courier_name",
+            "id", "client_name", "courier", "courier_name", "courier_location", "courier_rating",
+            "assignment_type", "preferred_courier", "broadcast_radius_km", "is_escalated",
             "pickup_address", "pickup_location", "pickup_contact_name", "pickup_contact_phone", "pickup_instructions",
             "delivery_address", "delivery_location", "delivery_contact_name", "delivery_contact_phone", "delivery_instructions",
             "package_description", "package_size", "is_fragile", "estimated_weight_kg",
@@ -39,12 +43,27 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "status", "courier", "estimated_price", "final_price",
             "accepted_at", "picked_up_at", "delivered_at", "cancelled_at", "created_at",
+            "escalated_at", "is_escalated",
         ]
 
     def get_courier_name(self, obj):
         if obj.courier:
             return obj.courier.user.get_full_name()
         return None
+
+    def get_courier_location(self, obj):
+        if obj.courier and obj.courier.last_known_location:
+            loc = obj.courier.last_known_location
+            return {"lat": loc.y, "lng": loc.x}
+        return None
+
+    def get_courier_rating(self, obj):
+        if obj.courier:
+            return float(obj.courier.rating)
+        return None
+
+    def get_is_escalated(self, obj):
+        return obj.escalated_at is not None
 
     def create(self, validated_data):
         validated_data["client"] = self.context["request"].user

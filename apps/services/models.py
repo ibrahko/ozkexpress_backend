@@ -21,6 +21,11 @@ class CancellationReason(models.TextChoices):
     OTHER = "other", "Autre"
 
 
+class AssignmentType(models.TextChoices):
+    BROADCAST = "broadcast", "Diffusion zone"
+    DIRECT    = "direct",    "Contact direct"
+
+
 class ServiceRequest(BaseModel):
     """
     Demande de livraison de colis par un client à un coursier.
@@ -38,6 +43,26 @@ class ServiceRequest(BaseModel):
         blank=True,
         related_name="service_requests",
     )
+
+    # ── Mode d'attribution ──────────────────────────────────────────────
+    assignment_type = models.CharField(
+        max_length=10,
+        choices=AssignmentType.choices,
+        default=AssignmentType.BROADCAST,
+    )
+    # Pour le mode "direct" : coursier ciblé par le client
+    preferred_courier = models.ForeignKey(
+        "couriers.Courier",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="direct_requests",
+    )
+    # Rayon de diffusion initial (km) — s'élargit à tous après 1 min
+    broadcast_radius_km = models.PositiveSmallIntegerField(default=5)
+    # Timestamp d'escalade (null = pas encore escaladée)
+    escalated_at = models.DateTimeField(null=True, blank=True)
+    # ────────────────────────────────────────────────────────────────────
 
     # Départ
     pickup_address = models.TextField()
