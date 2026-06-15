@@ -36,9 +36,9 @@ if DATABASE_URL:
         },
     }
 
-# Redis — override explicite pour Railway (django-environ ne résout pas les références Railway)
+# Redis — fallback mémoire si URL non disponible (suffisant pour tester)
 _REDIS_URL = os.environ.get("REDIS_URL", "")
-if _REDIS_URL:
+if _REDIS_URL and "localhost" not in _REDIS_URL:
     CACHES = {
         "default": {
             "BACKEND": "django_redis.cache.RedisCache",
@@ -56,6 +56,23 @@ if _REDIS_URL:
     }
     CELERY_BROKER_URL = _REDIS_URL
     CELERY_RESULT_BACKEND = _REDIS_URL
+else:
+    # Cache mémoire locale — pas de Redis requis pour tester
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "motoexpress-test",
+        }
+    }
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
+    }
+
+# Désactiver le throttling globalement (utilise le cache Redis absent)
+REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = []
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {}
 
 # Sécurité
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", SECRET_KEY)
