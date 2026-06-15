@@ -2,7 +2,6 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerUIView, SpectacularRedocView
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -34,15 +33,24 @@ urlpatterns = [
     path(API_V1, include("apps.disputes.urls")),
     path(API_V1, include("apps.notifications.urls")),
     path(API_V1, include("apps.analytics.urls")),
-
-    # OpenAPI / Swagger
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("api/docs/", SpectacularSwaggerUIView.as_view(url_name="schema"), name="swagger-ui"),
-    path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
 ]
 
+# Swagger / Redoc uniquement si drf-spectacular est disponible
+try:
+    from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerUIView, SpectacularRedocView
+    urlpatterns += [
+        path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+        path("api/docs/", SpectacularSwaggerUIView.as_view(url_name="schema"), name="swagger-ui"),
+        path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+    ]
+except ImportError:
+    pass
+
 if settings.DEBUG:
-    import debug_toolbar
-    urlpatterns += [path("__debug__/", include(debug_toolbar.urls))]
+    try:
+        import debug_toolbar
+        urlpatterns += [path("__debug__/", include(debug_toolbar.urls))]
+    except ImportError:
+        pass
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

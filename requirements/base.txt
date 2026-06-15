@@ -40,7 +40,7 @@ firebase-admin>=6.2.0
 twilio>=8.10.0
 
 # API
-drf-spectacular>=0.26.5
+drf-spectacular==0.27.2
 drf-nested-routers>=0.93.4
 django-filter>=23.5
 
