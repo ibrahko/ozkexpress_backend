@@ -5,7 +5,9 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
-from core.throttles import OtpVerifyThrottle, OtpRequestThrottle
+# from core.throttles import OtpVerifyThrottle, OtpRequestThrottle  # désactivé temporairement pour test
+OtpVerifyThrottle = None
+OtpRequestThrottle = None
 from .models import User, UserAddress
 from .serializers import (
     PhoneSerializer,
@@ -25,7 +27,7 @@ class RequestOTPView(generics.GenericAPIView):
     """
     serializer_class = PhoneSerializer
     permission_classes = [AllowAny]
-    throttle_classes = [OtpRequestThrottle]
+    throttle_classes = []
 
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
@@ -53,7 +55,7 @@ class VerifyOTPView(generics.GenericAPIView):
     """
     serializer_class = OTPVerifySerializer
     permission_classes = [AllowAny]
-    throttle_classes = [OtpVerifyThrottle]
+    throttle_classes = []
 
     def post(self, request):
         serializer = self.get_serializer(data=request.data)

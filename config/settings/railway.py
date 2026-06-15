@@ -36,5 +36,26 @@ if DATABASE_URL:
         },
     }
 
+# Redis — override explicite pour Railway (django-environ ne résout pas les références Railway)
+_REDIS_URL = os.environ.get("REDIS_URL", "")
+if _REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": _REDIS_URL,
+            "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+            "KEY_PREFIX": "motoexpress",
+            "TIMEOUT": 300,
+        }
+    }
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [_REDIS_URL], "capacity": 1500, "expiry": 10},
+        }
+    }
+    CELERY_BROKER_URL = _REDIS_URL
+    CELERY_RESULT_BACKEND = _REDIS_URL
+
 # Sécurité
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", SECRET_KEY)
