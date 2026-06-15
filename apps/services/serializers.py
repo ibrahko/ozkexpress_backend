@@ -25,13 +25,16 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
     courier_name = serializers.SerializerMethodField()
     courier_location = serializers.SerializerMethodField()
     courier_rating = serializers.SerializerMethodField()
+    # Nouveaux champs (défensifs — fonctionnent avant et après migration)
+    assignment_type = serializers.SerializerMethodField()
+    broadcast_radius_km = serializers.SerializerMethodField()
     is_escalated = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
         fields = [
             "id", "client_name", "courier", "courier_name", "courier_location", "courier_rating",
-            "assignment_type", "preferred_courier", "broadcast_radius_km", "is_escalated",
+            "assignment_type", "broadcast_radius_km", "is_escalated",
             "pickup_address", "pickup_location", "pickup_contact_name", "pickup_contact_phone", "pickup_instructions",
             "delivery_address", "delivery_location", "delivery_contact_name", "delivery_contact_phone", "delivery_instructions",
             "package_description", "package_size", "is_fragile", "estimated_weight_kg",
@@ -43,7 +46,6 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "status", "courier", "estimated_price", "final_price",
             "accepted_at", "picked_up_at", "delivered_at", "cancelled_at", "created_at",
-            "escalated_at", "is_escalated",
         ]
 
     def get_courier_name(self, obj):
@@ -62,8 +64,14 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             return float(obj.courier.rating)
         return None
 
+    def get_assignment_type(self, obj):
+        return getattr(obj, 'assignment_type', 'broadcast')
+
+    def get_broadcast_radius_km(self, obj):
+        return getattr(obj, 'broadcast_radius_km', 5)
+
     def get_is_escalated(self, obj):
-        return obj.escalated_at is not None
+        return getattr(obj, 'escalated_at', None) is not None
 
     def create(self, validated_data):
         validated_data["client"] = self.context["request"].user

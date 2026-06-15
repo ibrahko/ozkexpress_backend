@@ -85,27 +85,39 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
     def available(self, request):
         """
         GET /api/v1/services/available/
-        Retourne les demandes visibles par ce coursier selon le mode d'attribution :
-
-        BROADCAST :
-          - < 1 min : coursier doit être dans broadcast_radius_km autour du départ
-          - ≥ 1 min : escalade → tous les coursiers en ligne la voient
-        DIRECT :
-          - Uniquement le preferred_courier ciblé par le client
+        Retourne les demandes visibles par ce coursier selon le mode d'attribution.
+        Défensif : fonctionne avec et sans la migration des nouveaux champs.
         """
         from django.utils import timezone
         from datetime import timedelta
-        from django.contrib.gis.geos import Point
-        from django.contrib.gis.measure import D
 
         courier = request.user.courier_profile
         now = timezone.now()
         escalation_delay = timedelta(minutes=1)
+
+        # Vérifier si les nouvelles colonnes existent (migration faite ?)
+        try:
+            from django.db import connection
+            cols = [c.name for c in connection.introspection.get_table_description(
+                connection.cursor(), ServiceRequest._meta.db_table
+            )]
+            new_cols_exist = 'assignment_type' in cols
+        except Exception:
+            new_cols_exist = False
+
+        if not new_cols_exist:
+            # Avant migration : comportement simple — tout le monde voit tout
+            qs = ServiceRequest.objects.filter(
+                status=RequestStatus.PENDING
+            ).select_related("client")
+            return Response(self.get_serializer(qs, many=True).data)
+
+        # Après migration : logique complète
         pending = ServiceRequest.objects.filter(
             status=RequestStatus.PENDING
         ).select_related("client", "preferred_courier")
 
-        # Auto-escalade : si une demande broadcast dépasse 1 min sans acceptation, la marquer
+        # Auto-escalade : demandes broadcast > 1 min sans réponse
         to_escalate = pending.filter(
             assignment_type="broadcast",
             escalated_at__isnull=True,
@@ -114,32 +126,29 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
         if to_escalate.exists():
             to_escalate.update(escalated_at=now)
 
+        courier_location = courier.last_known_location
         visible = []
-        courier_location = courier.last_known_location  # Point GIS ou None
 
         for req in pending:
-            if req.assignment_type == "direct":
-                # Direct : seul le coursier ciblé voit la demande
+            assignment = getattr(req, 'assignment_type', 'broadcast')
+
+            if assignment == "direct":
                 if req.preferred_courier_id == courier.pk:
                     visible.append(req.pk)
-
             else:  # broadcast
-                if req.escalated_at:
-                    # Escaladée : tout le monde en ligne la voit
+                escalated = getattr(req, 'escalated_at', None)
+                if escalated:
                     visible.append(req.pk)
-                else:
-                    # Pas encore escaladée : filtrer par distance
-                    if courier_location and req.pickup_location:
-                        dist_km = courier_location.distance(req.pickup_location) * 111  # degrés → km approx
-                        if dist_km <= req.broadcast_radius_km:
-                            visible.append(req.pk)
-                    else:
-                        # Pas de localisation connue → montrer quand même (fallback)
+                elif courier_location and req.pickup_location:
+                    dist_km = courier_location.distance(req.pickup_location) * 111
+                    radius = getattr(req, 'broadcast_radius_km', 5)
+                    if dist_km <= radius:
                         visible.append(req.pk)
+                else:
+                    visible.append(req.pk)
 
         qs = pending.filter(pk__in=visible)
-        serializer = self.get_serializer(qs, many=True)
-        return Response(serializer.data)
+        return Response(self.get_serializer(qs, many=True).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsCourier])
     def accept(self, request, pk=None):
