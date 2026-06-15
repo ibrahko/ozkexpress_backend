@@ -88,7 +88,26 @@ class AuthService:
                 user.is_phone_verified = True
                 user.save(update_fields=["is_phone_verified"])
 
+        # Auto-créer le profil métier si absent
+        cls._ensure_worker_profile(user)
+
         return user, created
+
+    @classmethod
+    def _ensure_worker_profile(cls, user) -> None:
+        """Crée le profil Courier ou Driver s'il n'existe pas encore."""
+        if user.user_type == "courier":
+            try:
+                user.courier_profile
+            except Exception:
+                from apps.couriers.models import Courier
+                Courier.objects.get_or_create(user=user)
+        elif user.user_type == "driver":
+            try:
+                user.driver_profile
+            except Exception:
+                from apps.drivers.models import Driver
+                Driver.objects.get_or_create(user=user)
 
     @classmethod
     def get_tokens_for_user(cls, user: User) -> dict:
