@@ -53,17 +53,16 @@ class OTPService:
         """Génère et envoie un OTP. Retourne le succès de l'envoi SMS."""
         otp = cls.create_otp(phone)
 
-        # Mode dev : log le code si DEBUG ou si Twilio non configuré
-        twilio_configured = bool(
-            getattr(settings, 'TWILIO_ACCOUNT_SID', '') and
-            getattr(settings, 'TWILIO_AUTH_TOKEN', '') and
-            getattr(settings, 'TWILIO_PHONE_NUMBER', '')
-        )
-        if settings.DEBUG or not twilio_configured:
-            logger.info(">>> OTP DEV [%s] code=%s <<<", phone, otp.code)
-            return True
+        # Toujours logger le code (utile en dev et pour debug prod)
+        logger.info(">>> OTP [%s] code=%s <<<", phone, otp.code)
 
-        return cls.send_sms(phone, otp.code)
+        # Envoyer par SMS si les credentials Twilio sont configurés
+        if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_PHONE_NUMBER:
+            return cls.send_sms(phone, otp.code)
+
+        # Pas de credentials Twilio : on retourne True (mode dev sans SMS)
+        logger.warning("Twilio non configuré — OTP affiché en console uniquement.")
+        return True
 
 
 class AuthService:
@@ -88,26 +87,7 @@ class AuthService:
                 user.is_phone_verified = True
                 user.save(update_fields=["is_phone_verified"])
 
-        # Auto-créer le profil métier si absent
-        cls._ensure_worker_profile(user)
-
         return user, created
-
-    @classmethod
-    def _ensure_worker_profile(cls, user) -> None:
-        """Crée le profil Courier ou Driver s'il n'existe pas encore."""
-        if user.user_type == "courier":
-            try:
-                user.courier_profile
-            except Exception:
-                from apps.couriers.models import Courier
-                Courier.objects.get_or_create(user=user)
-        elif user.user_type == "driver":
-            try:
-                user.driver_profile
-            except Exception:
-                from apps.drivers.models import Driver
-                Driver.objects.get_or_create(user=user)
 
     @classmethod
     def get_tokens_for_user(cls, user: User) -> dict:
