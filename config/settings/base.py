@@ -6,6 +6,9 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 APPS_DIR = BASE_DIR / "apps"
 
+GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal313.dll'  # adapte selon la version
+GEOS_LIBRARY_PATH = r'C:\OSGeo4W\bin\geos_c.dll'
+
 env = environ.Env(DEBUG=(bool, False))
 READ_DOT_ENV_FILE = env.bool("DJANGO_READ_DOT_ENV_FILE", default=False)
 if READ_DOT_ENV_FILE:
@@ -91,18 +94,32 @@ TEMPLATES = [
     },
 ]
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.contrib.gis.db.backends.postgis",
-        "NAME": env("POSTGRES_DB", default="motoexpress"),
-        "USER": env("POSTGRES_USER", default="motoexpress"),
-        "PASSWORD": env("POSTGRES_PASSWORD", default="motoexpress"),
-        "HOST": env("POSTGRES_HOST", default="localhost"),
-        "PORT": env("POSTGRES_PORT", default="5432"),
-        "CONN_MAX_AGE": env.int("POSTGRES_CONN_MAX_AGE", default=60),
-        "OPTIONS": {"connect_timeout": 10},
+_DATABASE_URL = env("DATABASE_URL", default=None)
+
+if _DATABASE_URL:
+    # Railway injecte DATABASE_URL automatiquement
+    import dj_database_url
+    DATABASES = {
+        "default": dj_database_url.parse(
+            _DATABASE_URL,
+            engine="django.contrib.gis.db.backends.postgis",
+            conn_max_age=env.int("POSTGRES_CONN_MAX_AGE", default=60),
+        )
     }
-}
+    DATABASES["default"]["OPTIONS"] = {"connect_timeout": 10}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.contrib.gis.db.backends.postgis",
+            "NAME": env("POSTGRES_DB", default="motoexpress"),
+            "USER": env("POSTGRES_USER", default="motoexpress"),
+            "PASSWORD": env("POSTGRES_PASSWORD", default="dev_pusko"),
+            "HOST": env("POSTGRES_HOST", default="localhost"),
+            "PORT": env("POSTGRES_PORT", default="5432"),
+            "CONN_MAX_AGE": env.int("POSTGRES_CONN_MAX_AGE", default=60),
+            "OPTIONS": {"connect_timeout": 10},
+        }
+    }
 
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 

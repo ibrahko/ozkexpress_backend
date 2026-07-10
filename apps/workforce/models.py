@@ -12,18 +12,27 @@ class WorkerStatus(models.TextChoices):
     BUSY = "busy", "En course"
 
 
+class VehicleType(models.TextChoices):
+    MOTO = "moto", "Moto-taxi"
+    TRICYCLE = "tricycle", "Tricycle (Katakatani)"
+    CAR = "car", "Voiture"
+    VAN = "van", "Van / Fourgonnette"
+
+
 class DocumentType(models.TextChoices):
     NATIONAL_ID = "national_id", "Carte d'identité nationale"
     DRIVER_LICENSE = "driver_license", "Permis de conduire"
     VEHICLE_REGISTRATION = "vehicle_registration", "Carte grise"
     INSURANCE = "insurance", "Assurance véhicule"
+    VIGNETTE = "vignette", "Vignette"
+    TECHNICAL_VISIT = "technical_visit", "Visite technique"
     PHOTO = "photo", "Photo d'identité"
 
 
 class BaseWorker(BaseModel):
     """
     Modèle abstrait commun aux coursiers et chauffeurs.
-    Contient: profil, GPS, notation, documents.
+    Contient: profil, véhicule complet, GPS, notation, documents.
     """
     user = models.OneToOneField(
         "accounts.User",
@@ -37,13 +46,41 @@ class BaseWorker(BaseModel):
         db_index=True,
     )
 
-    # Véhicule
-    vehicle_plate = models.CharField(max_length=20, unique=True)
-    vehicle_model = models.CharField(max_length=100)
+    # ── Véhicule ──────────────────────────────────────────────
+    vehicle_type = models.CharField(
+        max_length=20,
+        choices=VehicleType.choices,
+        default=VehicleType.MOTO,
+        db_index=True,
+    )
+    vehicle_brand = models.CharField(max_length=100, help_text="Marque (ex: Yamaha, Honda, Bajaj)")
+    vehicle_model = models.CharField(max_length=100, help_text="Modèle (ex: YBR 125, CB 150)")
     vehicle_year = models.PositiveSmallIntegerField(null=True, blank=True)
     vehicle_color = models.CharField(max_length=50, blank=True)
+    vehicle_plate = models.CharField(
+        max_length=20, unique=True,
+        help_text="Numéro de plaque d'immatriculation"
+    )
+    chassis_number = models.CharField(
+        max_length=50, unique=True,
+        help_text="Numéro de châssis (numéro sachis)"
+    )
 
-    # Permis de conduire
+    # ── Documents réglementaires ───────────────────────────────
+    insurance_expiry = models.DateField(
+        null=True, blank=True,
+        help_text="Date d'expiration de l'assurance"
+    )
+    vignette_expiry = models.DateField(
+        null=True, blank=True,
+        help_text="Date d'expiration de la vignette"
+    )
+    technical_visit_expiry = models.DateField(
+        null=True, blank=True,
+        help_text="Date d'expiration de la visite technique"
+    )
+
+    # ── Permis de conduire ────────────────────────────────────
     license_number = models.CharField(max_length=50, unique=True)
 
     # GPS temps réel

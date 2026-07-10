@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core.permissions import IsCourier, IsAdminUser
-from .models import Courier, CourierEarning
+from .models import Courier, CourierEarning, FavoriteCourier
 
 
 class CourierSerializer(serializers.ModelSerializer):
@@ -71,6 +71,67 @@ class CourierViewSet(viewsets.ModelViewSet):
         return Response({"results": serializer.data, "total_net": total})
 
 
+# ── E4 : Coursiers favoris (API consommée par l'app mobile) ─────────────
+
+class FavoriteCourierSerializer(serializers.ModelSerializer):
+    """Forme alignée sur le type FavoriteCourier du mobile (src/utils/favorites.ts)."""
+    courier_id = serializers.UUIDField(source="courier.id", read_only=True)
+    name = serializers.CharField(source="courier.user.get_full_name", read_only=True)
+    phone = serializers.CharField(source="courier.user.phone", read_only=True)
+    rating = serializers.FloatField(source="courier.rating", read_only=True)
+    vehicle = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FavoriteCourier
+        fields = ["id", "courier_id", "name", "phone", "rating", "vehicle", "created_at"]
+        read_only_fields = fields
+
+    def get_vehicle(self, obj):
+        c = obj.courier
+        parts = [
+            c.vehicle_brand or None,
+            c.vehicle_model or None,
+            f"Plaque {c.vehicle_plate}" if c.vehicle_plate and not c.vehicle_plate.startswith("TMP-") else None,
+        ]
+        label = " · ".join(p for p in parts if p)
+        return label or None
+
+
+class FavoriteCourierViewSet(viewsets.GenericViewSet):
+    """
+    GET  /api/v1/favorites/couriers/          — liste des favoris du client
+    POST /api/v1/favorites/couriers/add/      — { "courier_id": "<uuid>" }
+    POST /api/v1/favorites/couriers/remove/   — { "courier_id": "<uuid>" }
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = FavoriteCourierSerializer
+
+    def get_queryset(self):
+        return FavoriteCourier.objects.filter(
+            client=self.request.user
+        ).select_related("courier__user")
+
+    def list(self, request):
+        serializer = self.get_serializer(self.get_queryset(), many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["post"])
+    def add(self, request):
+        courier = Courier.objects.filter(id=request.data.get("courier_id")).first()
+        if courier is None:
+            return Response({"detail": "Coursier introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        fav, _ = FavoriteCourier.objects.get_or_create(client=request.user, courier=courier)
+        return Response(self.get_serializer(fav).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"])
+    def remove(self, request):
+        FavoriteCourier.objects.filter(
+            client=request.user, courier_id=request.data.get("courier_id")
+        ).delete()
+        return Response({"detail": "Retiré des favoris."})
+
+
 router = DefaultRouter()
 router.register("couriers", CourierViewSet, basename="courier")
+router.register("favorites/couriers", FavoriteCourierViewSet, basename="favorite-courier")
 urlpatterns = [path("", include(router.urls))]

@@ -2,8 +2,7 @@ from rest_framework import generics, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-# from core.throttles import PaymentInitiateThrottle  # désactivé pour test
-PaymentInitiateThrottle = None
+from core.throttles import PaymentInitiateThrottle
 from .models import Transaction, Wallet, WithdrawalRequest, PaymentType, PaymentStatus
 from .serializers import (
     TransactionSerializer, InitiatePaymentSerializer,
@@ -19,7 +18,7 @@ class InitiatePaymentView(generics.GenericAPIView):
     """POST /api/v1/payments/initiate/ — Initier un paiement."""
     serializer_class = InitiatePaymentSerializer
     permission_classes = [IsAuthenticated]
-    throttle_classes = []
+    throttle_classes = [PaymentInitiateThrottle]
 
     def post(self, request):
         serializer = self.get_serializer(data=request.data)

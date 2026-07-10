@@ -22,8 +22,18 @@ class CancellationReason(models.TextChoices):
 
 
 class AssignmentType(models.TextChoices):
-    BROADCAST = "broadcast", "Diffusion zone"
-    DIRECT    = "direct",    "Contact direct"
+    """Mode d'attribution de la demande (aligné sur l'app mobile)."""
+    BROADCAST = "broadcast", "Diffusion aux coursiers proches"
+    DIRECT = "direct", "Coursier choisi par le client"
+
+
+class PaymentMethod(models.TextChoices):
+    """Moyens de paiement proposés par l'app mobile (écran C3)."""
+    CASH = "cash", "Espèces"
+    ORANGE_MONEY = "orange_money", "Orange Money"
+    MTN_MOMO = "mtn_momo", "MTN MoMo"
+    WAVE = "wave", "Wave"
+    STRIPE = "stripe", "Carte bancaire"
 
 
 class ServiceRequest(BaseModel):
@@ -43,26 +53,6 @@ class ServiceRequest(BaseModel):
         blank=True,
         related_name="service_requests",
     )
-
-    # ── Mode d'attribution ──────────────────────────────────────────────
-    assignment_type = models.CharField(
-        max_length=10,
-        choices=AssignmentType.choices,
-        default=AssignmentType.BROADCAST,
-    )
-    # Pour le mode "direct" : coursier ciblé par le client
-    preferred_courier = models.ForeignKey(
-        "couriers.Courier",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="direct_requests",
-    )
-    # Rayon de diffusion initial (km) — s'élargit à tous après 1 min
-    broadcast_radius_km = models.PositiveSmallIntegerField(default=5)
-    # Timestamp d'escalade (null = pas encore escaladée)
-    escalated_at = models.DateTimeField(null=True, blank=True)
-    # ────────────────────────────────────────────────────────────────────
 
     # Départ
     pickup_address = models.TextField()
@@ -90,6 +80,23 @@ class ServiceRequest(BaseModel):
     estimated_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     final_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     distance_km = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+
+    # Attribution & paiement (envoyés par l'app mobile)
+    assignment_type = models.CharField(
+        max_length=10, choices=AssignmentType.choices, default=AssignmentType.BROADCAST
+    )
+    broadcast_radius_km = models.PositiveSmallIntegerField(default=5)
+    preferred_courier = models.ForeignKey(
+        "couriers.Courier",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="preferred_requests",
+        help_text="Renseigné uniquement en attribution directe",
+    )
+    payment_method = models.CharField(
+        max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.CASH
+    )
 
     # Statut
     status = models.CharField(
@@ -144,11 +151,38 @@ class ServiceRequest(BaseModel):
         from django.utils import timezone
         self.status = RequestStatus.DELIVERED
         self.delivered_at = timezone.now()
-        self.save(update_fields=["status", "delivered_at", "updated_at"])
+        # P4 : figer le prix final (à défaut, le prix estimé)
+        if self.final_price is None and self.estimated_price is not None:
+            self.final_price = self.estimated_price
+        self.save(update_fields=["status", "delivered_at", "final_price", "updated_at"])
         if self.courier:
             self.courier.set_available()
             self.courier.total_trips = models.F("total_trips") + 1
             self.courier.save(update_fields=["total_trips"])
+            self._create_courier_earning()
+
+    def _create_courier_earning(self):
+        """P4 : gain du coursier = prix − frais de service (aligné sur l'app mobile)."""
+        from decimal import Decimal
+        from apps.couriers.models import CourierEarning
+        from .pricing import SERVICE_FEE
+
+        if self.final_price is None or self.courier is None:
+            return
+        if CourierEarning.objects.filter(service_request=self).exists():
+            return  # idempotent
+
+        gross = Decimal(self.final_price)
+        commission = min(SERVICE_FEE, gross)
+        rate = (commission / gross * Decimal("100")).quantize(Decimal("0.01")) if gross else Decimal("0.00")
+        CourierEarning.objects.create(
+            courier=self.courier,
+            service_request=self,
+            gross_amount=gross,
+            commission_rate=rate,
+            commission_amount=commission,
+            net_amount=gross - commission,
+        )
 
     def cancel(self, reason: str = CancellationReason.OTHER, note: str = ""):
         from django.utils import timezone
@@ -269,3 +303,27 @@ class RideRequest(BaseModel):
             self.driver.set_available()
             self.driver.total_trips = models.F("total_trips") + 1
             self.driver.save(update_fields=["total_trips"])
+
+
+class Message(BaseModel):
+    """
+    F3 : messagerie client ↔ coursier, liée à une demande de livraison.
+    Accès limité au client et au coursier assigné (voir la vue `messages`).
+    """
+    service_request = models.ForeignKey(
+        ServiceRequest, on_delete=models.CASCADE, related_name="messages"
+    )
+    sender = models.ForeignKey(
+        "accounts.User", on_delete=models.CASCADE, related_name="sent_messages"
+    )
+    body = models.TextField(max_length=2000)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Message"
+        verbose_name_plural = "Messages"
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["service_request", "created_at"])]
+
+    def __str__(self):
+        return f"Message de {self.sender_id} sur #{str(self.service_request_id)[:8]}"
