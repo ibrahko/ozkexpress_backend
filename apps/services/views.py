@@ -4,12 +4,21 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import IsClient, IsCourier, IsDriver
-# from core.throttles import ServiceCreateThrottle  # désactivé pour test
-ServiceCreateThrottle = None
-from .models import ServiceRequest, RideRequest, RequestStatus, RideStatus, CancellationReason
-from .serializers import (
-    ServiceRequestSerializer, RideRequestSerializer, RatingSerializer
+from core.throttles import ServiceCreateThrottle
+from .models import (
+    ServiceRequest, RideRequest, RequestStatus, RideStatus,
+    CancellationReason, AssignmentType, Message,
 )
+from .serializers import (
+    ServiceRequestSerializer, RideRequestSerializer, RatingSerializer, MessageSerializer
+)
+
+# Escalade automatique de la diffusion (P5) :
+# après 60 s sans acceptation → rayon élargi à 10 km min,
+# après 180 s → visible par tous les coursiers en ligne.
+ESCALATION_WIDEN_S = 60
+ESCALATION_WIDEN_KM = 10
+ESCALATION_OPEN_S = 180
 
 
 class ServiceRequestViewSet(viewsets.ModelViewSet):
@@ -25,7 +34,9 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created_at"]
 
     def get_throttles(self):
-        return []
+        if self.action == "create":
+            return [ServiceCreateThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         user = self.request.user
@@ -84,71 +95,88 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], permission_classes=[IsCourier])
     def available(self, request):
         """
-        GET /api/v1/services/available/
-        Retourne les demandes visibles par ce coursier selon le mode d'attribution.
-        Défensif : fonctionne avec et sans la migration des nouveaux champs.
+        GET /api/v1/services/available/ — demandes en attente pour CE coursier.
+        - broadcast : point de récupération dans le rayon de diffusion
+          (si la position du coursier est connue, sinon toutes les diffusions)
+        - direct : uniquement les demandes qui lui sont destinées
         """
-        from django.utils import timezone
-        from datetime import timedelta
+        from django.db.models import Q
 
-        courier = request.user.courier_profile
-        now = timezone.now()
-        escalation_delay = timedelta(minutes=1)
+        courier = getattr(request.user, "courier_profile", None)
+        if courier is None:
+            return Response(
+                {"detail": "Profil coursier introuvable. Contactez le support."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
-        # Vérifier si les nouvelles colonnes existent (migration faite ?)
-        try:
-            from django.db import connection
-            cols = [c.name for c in connection.introspection.get_table_description(
-                connection.cursor(), ServiceRequest._meta.db_table
-            )]
-            new_cols_exist = 'assignment_type' in cols
-        except Exception:
-            new_cols_exist = False
-
-        if not new_cols_exist:
-            # Avant migration : comportement simple — tout le monde voit tout
-            qs = ServiceRequest.objects.filter(
-                status=RequestStatus.PENDING
-            ).select_related("client")
-            return Response(self.get_serializer(qs, many=True).data)
-
-        # Après migration : logique complète
-        pending = ServiceRequest.objects.filter(
-            status=RequestStatus.PENDING
-        ).select_related("client", "preferred_courier")
-
-        # Auto-escalade : demandes broadcast > 1 min sans réponse
-        to_escalate = pending.filter(
-            assignment_type="broadcast",
-            escalated_at__isnull=True,
-            created_at__lt=now - escalation_delay,
+        qs = (
+            ServiceRequest.objects.filter(status=RequestStatus.PENDING)
+            .select_related("client")
+            .filter(Q(assignment_type=AssignmentType.BROADCAST) | Q(preferred_courier=courier))
         )
-        if to_escalate.exists():
-            to_escalate.update(escalated_at=now)
 
-        courier_location = courier.last_known_location
-        visible = []
+        # Rayon de diffusion : filtrage par distance au point de récupération,
+        # avec escalade automatique selon l'ancienneté de la demande (P5).
+        results = list(qs)
+        if courier.last_known_location:
+            from django.utils import timezone
+            from django.contrib.gis.db.models.functions import Distance
 
-        for req in pending:
-            assignment = getattr(req, 'assignment_type', 'broadcast')
+            now = timezone.now()
+            annotated = qs.annotate(
+                pickup_distance=Distance("pickup_location", courier.last_known_location)
+            )
 
-            if assignment == "direct":
-                if req.preferred_courier_id == courier.pk:
-                    visible.append(req.pk)
-            else:  # broadcast
-                escalated = getattr(req, 'escalated_at', None)
-                if escalated:
-                    visible.append(req.pk)
-                elif courier_location and req.pickup_location:
-                    dist_km = courier_location.distance(req.pickup_location) * 111
-                    radius = getattr(req, 'broadcast_radius_km', 5)
-                    if dist_km <= radius:
-                        visible.append(req.pk)
-                else:
-                    visible.append(req.pk)
+            def effective_radius_km(r):
+                """Rayon effectif : élargi avec le temps d'attente. None = illimité."""
+                age_s = (now - r.created_at).total_seconds()
+                if age_s >= ESCALATION_OPEN_S:
+                    return None
+                base = float(r.broadcast_radius_km or 5)
+                if age_s >= ESCALATION_WIDEN_S:
+                    return max(base, ESCALATION_WIDEN_KM)
+                return base
 
-        qs = pending.filter(pk__in=visible)
-        return Response(self.get_serializer(qs, many=True).data)
+            results = []
+            for r in annotated:
+                if r.preferred_courier_id == courier.id:  # direct : toujours visible
+                    results.append(r)
+                    continue
+                radius = effective_radius_km(r)
+                if radius is None or r.pickup_distance is None or r.pickup_distance.km <= radius:
+                    results.append(r)
+
+        serializer = self.get_serializer(results, many=True)
+        return Response(serializer.data)
+
+    # ── F3 : Messagerie client ↔ coursier ──────────────────────────
+
+    @action(detail=True, methods=["get", "post"], permission_classes=[IsAuthenticated])
+    def messages(self, request, pk=None):
+        """
+        GET  /api/v1/services/{id}/messages/  — fil de discussion
+        POST /api/v1/services/{id}/messages/  — envoyer { "body": "..." }
+        Accès : client de la demande, coursier assigné, staff.
+        """
+        req = self.get_object()
+        user = request.user
+        is_client = req.client_id == user.id
+        is_courier = req.courier is not None and req.courier.user_id == user.id
+        if not (is_client or is_courier or user.is_staff):
+            return Response({"detail": "Non autorisé."}, status=status.HTTP_403_FORBIDDEN)
+
+        if request.method == "POST":
+            body = str(request.data.get("body", "")).strip()
+            if not body:
+                return Response({"detail": "Message vide."}, status=status.HTTP_400_BAD_REQUEST)
+            msg = Message.objects.create(service_request=req, sender=user, body=body[:2000])
+            return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+
+        from django.utils import timezone
+        thread = req.messages.select_related("sender").order_by("created_at")
+        # Les messages reçus sont marqués lus à l'ouverture du fil
+        thread.filter(read_at__isnull=True).exclude(sender=user).update(read_at=timezone.now())
+        return Response(MessageSerializer(thread, many=True).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsCourier])
     def accept(self, request, pk=None):
@@ -159,7 +187,18 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
                 {"detail": "Cette demande n'est plus disponible."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        courier = request.user.courier_profile
+        courier = getattr(request.user, "courier_profile", None)
+        if courier is None:
+            return Response(
+                {"detail": "Profil coursier introuvable. Contactez le support."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        # Attribution directe : réservée au coursier choisi
+        if req.preferred_courier_id and req.preferred_courier_id != courier.id:
+            return Response(
+                {"detail": "Cette demande est réservée à un autre coursier."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         req.accept(courier)
         return Response(self.get_serializer(req).data)
 
@@ -207,7 +246,9 @@ class RideRequestViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created_at"]
 
     def get_throttles(self):
-        return []
+        if self.action == "create":
+            return [ServiceCreateThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         user = self.request.user
@@ -235,7 +276,12 @@ class RideRequestViewSet(viewsets.ModelViewSet):
         ride = self.get_object()
         if ride.status != RideStatus.PENDING:
             return Response({"detail": "Course non disponible."}, status=status.HTTP_400_BAD_REQUEST)
-        driver = request.user.driver_profile
+        driver = getattr(request.user, "driver_profile", None)
+        if driver is None:
+            return Response(
+                {"detail": "Profil chauffeur introuvable. Contactez le support."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         ride.accept(driver)
         return Response(self.get_serializer(ride).data)
 

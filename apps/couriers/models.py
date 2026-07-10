@@ -72,3 +72,26 @@ class CourierEarning(BaseModel):
 
     def __str__(self):
         return f"{self.courier} - {self.net_amount} FCFA"
+
+
+class FavoriteCourier(BaseModel):
+    """
+    E4 : coursiers favoris d'un client (écran « Coursiers favoris » du mobile).
+    """
+    client = models.ForeignKey(
+        "accounts.User", on_delete=models.CASCADE, related_name="favorite_couriers"
+    )
+    courier = models.ForeignKey(
+        Courier, on_delete=models.CASCADE, related_name="favorited_by"
+    )
+
+    class Meta:
+        verbose_name = "Coursier favori"
+        verbose_name_plural = "Coursiers favoris"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["client", "courier"], name="unique_client_courier_favorite")
+        ]
+
+    def __str__(self):
+        return f"{self.client_id} ♥ {self.courier_id}"

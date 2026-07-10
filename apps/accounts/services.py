@@ -87,7 +87,35 @@ class AuthService:
                 user.is_phone_verified = True
                 user.save(update_fields=["is_phone_verified"])
 
+        # P3 : l'app mobile connecte les coursiers/chauffeurs par OTP —
+        # on garantit l'existence du profil métier (statut "pending",
+        # infos véhicule à compléter ensuite via PATCH /couriers/me/).
+        cls._ensure_worker_profile(user)
+
         return user, created
+
+    @classmethod
+    def _ensure_worker_profile(cls, user: User) -> None:
+        """
+        Crée le profil Courier/Driver s'il manque.
+        vehicle_plate / chassis_number / license_number sont uniques et
+        obligatoires : on pose des placeholders "TMP-xxxx" que le worker
+        remplacera via PATCH /couriers/me/ (ou /drivers/me/).
+        """
+        suffix = str(user.id).replace("-", "")[:10].upper()
+        placeholders = {
+            "vehicle_brand": "",
+            "vehicle_model": "",
+            "vehicle_plate": f"TMP-P{suffix}",
+            "chassis_number": f"TMP-C{suffix}",
+            "license_number": f"TMP-L{suffix}",
+        }
+        if user.user_type == "courier":
+            from apps.couriers.models import Courier
+            Courier.objects.get_or_create(user=user, defaults=placeholders)
+        elif user.user_type == "driver":
+            from apps.drivers.models import Driver
+            Driver.objects.get_or_create(user=user, defaults=placeholders)
 
     @classmethod
     def get_tokens_for_user(cls, user: User) -> dict:
