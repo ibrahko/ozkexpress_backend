@@ -6,8 +6,15 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 APPS_DIR = BASE_DIR / "apps"
 
-GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal313.dll'  # adapte selon la version
-GEOS_LIBRARY_PATH = r'C:\OSGeo4W\bin\geos_c.dll'
+# Chemins GDAL/GEOS : uniquement sous Windows (dev local avec OSGeo4W).
+# Sous Linux (Docker/Railway), les libs installées par apt sont trouvées automatiquement.
+if os.name == "nt":
+    _gdal = os.environ.get("GDAL_LIBRARY_PATH", r"C:\OSGeo4W\bin\gdal313.dll")
+    _geos = os.environ.get("GEOS_LIBRARY_PATH", r"C:\OSGeo4W\bin\geos_c.dll")
+    if os.path.exists(_gdal):
+        GDAL_LIBRARY_PATH = _gdal
+    if os.path.exists(_geos):
+        GEOS_LIBRARY_PATH = _geos
 
 env = environ.Env(DEBUG=(bool, False))
 READ_DOT_ENV_FILE = env.bool("DJANGO_READ_DOT_ENV_FILE", default=False)
