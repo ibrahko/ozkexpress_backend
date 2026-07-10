@@ -70,9 +70,19 @@ else:
         }
     }
 
-# Désactiver le throttling globalement (utilise le cache Redis absent)
+# Throttling : pas de limite globale en test, mais on GARDE les taux des scopes —
+# les vues OTP/paiement/GPS référencent explicitement ces scopes et exigent un taux
+# (sinon ImproperlyConfigured "No default throttle rate set"). Le cache locmem suffit.
 REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = []
-REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {}
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {
+    "anon": "1000/hour",
+    "user": "10000/hour",
+    "courier_location": "120/minute",
+    "otp_verify": "20/minute",
+    "otp_request": "10/minute",
+    "payment_initiate": "30/minute",
+    "service_create": "60/minute",
+}
 
 # Sécurité
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", SECRET_KEY)
