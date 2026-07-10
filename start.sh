@@ -13,7 +13,8 @@ echo ">>> Migrations..."
 python manage.py migrate --noinput
 
 echo ">>> Fichiers statiques..."
-python manage.py collectstatic --noinput --clear
+# sans --clear : déjà collectés au build, on ne fait que compléter (démarrage plus rapide)
+python manage.py collectstatic --noinput
 
 echo ">>> Démarrage serveur ASGI..."
 exec gunicorn config.asgi:application \
