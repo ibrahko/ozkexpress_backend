@@ -24,7 +24,8 @@ CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 # ── Production ─────────────────────────────────────────────────────
 FROM base as production
 
-COPY requirements/production.txt requirements/
+# production.txt référence "-r base.txt" : copier tout le dossier requirements/
+COPY requirements/ requirements/
 RUN pip install -r requirements/production.txt
 
 COPY . .
