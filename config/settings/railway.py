@@ -36,9 +36,18 @@ if DATABASE_URL:
         },
     }
 
-# Redis — fallback mémoire si URL non disponible (suffisant pour tester)
+# Redis — fallback mémoire si URL non disponible OU injoignable (suffisant pour tester)
 _REDIS_URL = os.environ.get("REDIS_URL", "")
+_redis_ok = False
 if _REDIS_URL and "localhost" not in _REDIS_URL:
+    try:
+        import redis as _redis_mod
+        _redis_mod.from_url(_REDIS_URL, socket_connect_timeout=2).ping()
+        _redis_ok = True
+    except Exception:
+        print(f"[settings.railway] Redis injoignable ({_REDIS_URL.split('@')[-1]}) — repli cache mémoire.")
+
+if _redis_ok:
     CACHES = {
         "default": {
             "BACKEND": "django_redis.cache.RedisCache",
