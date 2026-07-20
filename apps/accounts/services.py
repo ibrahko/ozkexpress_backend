@@ -58,7 +58,13 @@ class OTPService:
 
         # Envoyer par SMS si les credentials Twilio sont configurés
         if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_PHONE_NUMBER:
-            return cls.send_sms(phone, otp.code)
+            sent = cls.send_sms(phone, otp.code)
+            if not sent and getattr(settings, "OTP_ALLOW_SMS_FAILURE", False):
+                # Mode test : le SMS a échoué (ex. numéro non vérifié en trial Twilio)
+                # mais l'OTP est valide et lisible dans les logs → on ne bloque pas.
+                logger.warning("SMS non envoyé à %s — accepté (OTP_ALLOW_SMS_FAILURE).", phone)
+                return True
+            return sent
 
         # Pas de credentials Twilio : on retourne True (mode dev sans SMS)
         logger.warning("Twilio non configuré — OTP affiché en console uniquement.")

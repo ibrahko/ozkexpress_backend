@@ -80,6 +80,20 @@ class ServiceRequest(BaseModel):
     estimated_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     final_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     distance_km = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    tip_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Pourboire du client (100 % reversé au coursier)",
+    )
+
+    # Quartiers rattachés (statistiques : trajets les plus demandés)
+    pickup_zone = models.ForeignKey(
+        "services.Zone", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="pickups_services",
+    )
+    delivery_zone = models.ForeignKey(
+        "services.Zone", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="deliveries_services",
+    )
 
     # Attribution & paiement (envoyés par l'app mobile)
     assignment_type = models.CharField(
@@ -252,6 +266,20 @@ class RideRequest(BaseModel):
     final_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     distance_km = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     duration_minutes = models.PositiveSmallIntegerField(null=True, blank=True)
+    tip_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Pourboire du client (100 % reversé au chauffeur)",
+    )
+
+    # Quartiers rattachés (statistiques)
+    pickup_zone = models.ForeignKey(
+        "services.Zone", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="pickups_rides",
+    )
+    dropoff_zone = models.ForeignKey(
+        "services.Zone", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dropoffs_rides",
+    )
 
     # Statut
     status = models.CharField(
@@ -298,11 +326,79 @@ class RideRequest(BaseModel):
         from django.utils import timezone
         self.status = RideStatus.COMPLETED
         self.completed_at = timezone.now()
-        self.save(update_fields=["status", "completed_at", "updated_at"])
+        # Figer le prix final (à défaut, le prix estimé) — aligné sur les livraisons
+        if self.final_price is None and self.estimated_price is not None:
+            self.final_price = self.estimated_price
+        self.save(update_fields=["status", "completed_at", "final_price", "updated_at"])
         if self.driver:
             self.driver.set_available()
             self.driver.total_trips = models.F("total_trips") + 1
             self.driver.save(update_fields=["total_trips"])
+            self._create_driver_earning()
+
+    def _create_driver_earning(self):
+        """Gain du chauffeur = prix − frais de service (aligné sur les coursiers)."""
+        from decimal import Decimal
+        from apps.drivers.models import DriverEarning
+        from .pricing import RIDE_SERVICE_FEE
+
+        if self.final_price is None or self.driver is None:
+            return
+        if DriverEarning.objects.filter(ride_request=self).exists():
+            return  # idempotent
+
+        gross = Decimal(self.final_price)
+        commission = min(RIDE_SERVICE_FEE, gross)
+        rate = (commission / gross * Decimal("100")).quantize(Decimal("0.01")) if gross else Decimal("0.00")
+        DriverEarning.objects.create(
+            driver=self.driver,
+            ride_request=self,
+            gross_amount=gross,
+            commission_rate=rate,
+            commission_amount=commission,
+            net_amount=gross - commission,
+        )
+
+
+class Zone(BaseModel):
+    """
+    Quartier de Bamako avec son point central.
+    Permet au client de choisir « Djélibougou → Zone Industrielle » sans GPS :
+    le centre du quartier sert de coordonnées pour le calcul du prix (200 F/km).
+    """
+    name = models.CharField(max_length=100, unique=True)
+    commune = models.CharField(max_length=50, blank=True)
+    center = gis_models.PointField(srid=4326)
+    # is_active hérité de BaseModel : quartier désactivable sans suppression
+
+    class Meta:
+        verbose_name = "Quartier"
+        verbose_name_plural = "Quartiers"
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.commune})" if self.commune else self.name
+
+
+class ZoneDistance(BaseModel):
+    """
+    Distance routière réelle entre deux quartiers (saisie dans l'admin).
+    Prioritaire sur le calcul haversine pour les paires fréquentes.
+    La paire est symétrique : une seule entrée suffit (A→B vaut aussi B→A).
+    """
+    zone_from = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name="distances_from")
+    zone_to = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name="distances_to")
+    road_km = models.DecimalField(max_digits=6, decimal_places=2, help_text="Distance routière en km")
+
+    class Meta:
+        verbose_name = "Distance entre quartiers"
+        verbose_name_plural = "Distances entre quartiers"
+        constraints = [
+            models.UniqueConstraint(fields=["zone_from", "zone_to"], name="unique_zone_pair"),
+        ]
+
+    def __str__(self):
+        return f"{self.zone_from.name} → {self.zone_to.name} : {self.road_km} km"
 
 
 class Message(BaseModel):

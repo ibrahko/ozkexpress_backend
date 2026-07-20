@@ -8,7 +8,15 @@ from .base import *
 
 DEBUG = False
 
-ALLOWED_HOSTS = ["*"]
+# Hôtes autorisés : domaine(s) Railway via env, séparés par des virgules.
+# Fallback sur les domaines Railway génériques (évite le "*" trop permissif).
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get(
+        "DJANGO_ALLOWED_HOSTS", ".railway.app,.up.railway.app,localhost,127.0.0.1"
+    ).split(",")
+    if h.strip()
+]
 
 # CORS : autoriser l'app mobile (Expo)
 CORS_ALLOW_ALL_ORIGINS = True
@@ -92,6 +100,11 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {
     "payment_initiate": "30/minute",
     "service_create": "60/minute",
 }
+
+# Mode test : ne pas bloquer l'inscription si le SMS échoue (trial Twilio :
+# seuls les numéros vérifiés reçoivent les SMS ; le code OTP reste lisible
+# dans les logs Railway). Mettre OTP_ALLOW_SMS_FAILURE=0 en production.
+OTP_ALLOW_SMS_FAILURE = os.environ.get("OTP_ALLOW_SMS_FAILURE", "1") == "1"
 
 # Sécurité
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", SECRET_KEY)
