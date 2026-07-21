@@ -248,6 +248,17 @@ TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
 TWILIO_PHONE_NUMBER = env("TWILIO_PHONE_NUMBER", default="")
 
+# Twilio WhatsApp (OTP) — canal moins cher que le SMS.
+# TWILIO_WHATSAPP_NUMBER : numéro expéditeur au format "whatsapp:+14155238886"
+# TWILIO_WHATSAPP_CONTENT_SID : SID du template "Authentication" approuvé par Meta
+#   (variable {{1}} = code OTP ; bouton "Copy code" géré automatiquement par Meta)
+TWILIO_WHATSAPP_NUMBER = env("TWILIO_WHATSAPP_NUMBER", default="")
+TWILIO_WHATSAPP_CONTENT_SID = env("TWILIO_WHATSAPP_CONTENT_SID", default="")
+
+# Canal d'envoi de l'OTP : "whatsapp" (recommandé, moins cher) ou "sms".
+# Si le canal WhatsApp échoue (utilisateur sans WhatsApp, etc.), on retente en SMS.
+OTP_CHANNEL = env("OTP_CHANNEL", default="whatsapp")
+
 # Stripe
 STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", default="")
 STRIPE_PUBLISHABLE_KEY = env("STRIPE_PUBLISHABLE_KEY", default="")
