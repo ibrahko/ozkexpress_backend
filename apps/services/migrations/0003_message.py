@@ -47,6 +47,9 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="message",
-            index=models.Index(fields=["service_request", "created_at"], name="services_me_service_idx"),
+            # Nom aligné sur celui réellement généré par Django en production
+            # (avec suffixe de hash) — corrige un décalage d'historique de
+            # migrations causé par un ancien `makemigrations` lancé au démarrage.
+            index=models.Index(fields=["service_request", "created_at"], name="services_me_service_530197_idx"),
         ),
     ]
