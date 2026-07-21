@@ -1,17 +1,47 @@
-from rest_framework import viewsets, status, filters
+from rest_framework import viewsets, status, filters, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import IsClient, IsCourier, IsDriver
 from core.throttles import ServiceCreateThrottle
 from .models import (
     ServiceRequest, RideRequest, RequestStatus, RideStatus,
-    CancellationReason, AssignmentType, Message,
+    CancellationReason, AssignmentType, Message, Zone,
 )
 from .serializers import (
-    ServiceRequestSerializer, RideRequestSerializer, RatingSerializer, MessageSerializer
+    ServiceRequestSerializer, RideRequestSerializer, RatingSerializer, MessageSerializer,
+    ZoneSerializer, QuoteRequestSerializer, TipSerializer,
 )
+
+
+class ZoneListView(generics.ListAPIView):
+    """
+    GET /api/v1/services/zones/ — quartiers de Bamako (sélecteur de l'app mobile).
+    """
+    serializer_class = ZoneSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None  # liste courte, chargée en une fois et cachée par l'app
+
+    def get_queryset(self):
+        return Zone.objects.filter(is_active=True).order_by("name")
+
+
+class QuoteView(APIView):
+    """
+    POST /api/v1/services/quote/ — devis avant confirmation (source de vérité).
+    Body : {"pickup": {lat, lng}, "delivery": {lat, lng}, "kind": "delivery"|"ride"}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .pricing import quote
+
+        serializer = QuoteRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        return Response(quote(data["pickup"], data["delivery"], data["kind"]))
 
 # Escalade automatique de la diffusion (P5) :
 # après 60 s sans acceptation → rayon élargi à 10 km min,
@@ -89,6 +119,34 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
         if req.courier:
             self._update_worker_rating(req.courier)
         return Response({"detail": "Merci pour votre évaluation."})
+
+    @action(detail=True, methods=["post"], permission_classes=[IsClient])
+    def tip(self, request, pk=None):
+        """POST /api/v1/services/{id}/tip/ — pourboire (100 % pour le coursier)."""
+        from django.db.models import F
+        from apps.couriers.models import CourierEarning
+
+        req = self.get_object()
+        if req.client != request.user:
+            return Response({"detail": "Non autorisé."}, status=status.HTTP_403_FORBIDDEN)
+        if req.status != RequestStatus.DELIVERED:
+            return Response(
+                {"detail": "Le pourboire n'est possible qu'après la livraison."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = TipSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        amount = serializer.validated_data["amount"]
+
+        delta = amount - req.tip_amount
+        req.tip_amount = amount
+        req.save(update_fields=["tip_amount", "updated_at"])
+        # Répercuter sur le gain du coursier (sans commission sur le pourboire)
+        CourierEarning.objects.filter(service_request=req).update(
+            gross_amount=F("gross_amount") + delta,
+            net_amount=F("net_amount") + delta,
+        )
+        return Response({"detail": "Pourboire enregistré. Merci !", "tip_amount": amount})
 
     # ── Actions COURSIER ────────────────────────────────────────────
 
@@ -330,3 +388,31 @@ class RideRequestViewSet(viewsets.ModelViewSet):
                 ride.driver.rating = round(avg, 2)
                 ride.driver.save(update_fields=["rating"])
         return Response({"detail": "Merci pour votre évaluation."})
+
+    @action(detail=True, methods=["post"], permission_classes=[IsClient])
+    def tip(self, request, pk=None):
+        """POST /api/v1/rides/{id}/tip/ — pourboire (100 % pour le chauffeur)."""
+        from django.db.models import F
+        from apps.drivers.models import DriverEarning
+
+        ride = self.get_object()
+        if ride.client != request.user:
+            return Response({"detail": "Non autorisé."}, status=status.HTTP_403_FORBIDDEN)
+        if ride.status != RideStatus.COMPLETED:
+            return Response(
+                {"detail": "Le pourboire n'est possible qu'après la course."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = TipSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        amount = serializer.validated_data["amount"]
+
+        delta = amount - ride.tip_amount
+        ride.tip_amount = amount
+        ride.save(update_fields=["tip_amount", "updated_at"])
+        # Répercuter sur le gain du chauffeur (sans commission sur le pourboire)
+        DriverEarning.objects.filter(ride_request=ride).update(
+            gross_amount=F("gross_amount") + delta,
+            net_amount=F("net_amount") + delta,
+        )
+        return Response({"detail": "Pourboire enregistré. Merci !", "tip_amount": amount})

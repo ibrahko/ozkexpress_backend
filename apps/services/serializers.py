@@ -1,6 +1,14 @@
+from django.conf import settings
 from rest_framework import serializers
 from django.contrib.gis.geos import Point
-from .models import ServiceRequest, RideRequest, RequestStatus, RideStatus, Message
+from .models import ServiceRequest, RideRequest, RequestStatus, RideStatus, Message, Zone
+
+# Zone de service (Bamako et environs, avec marge). Surchargeable via settings.
+# Empêche les coordonnées (0,0) ou hors zone qui produisent des prix aberrants.
+SERVICE_AREA_BOUNDS = getattr(settings, "SERVICE_AREA_BOUNDS", {
+    "lat_min": 12.30, "lat_max": 13.00,
+    "lng_min": -8.40, "lng_max": -7.60,
+})
 
 
 class PointField(serializers.Field):
@@ -12,9 +20,16 @@ class PointField(serializers.Field):
 
     def to_internal_value(self, data):
         try:
-            return Point(float(data["lng"]), float(data["lat"]), srid=4326)
+            lat, lng = float(data["lat"]), float(data["lng"])
         except (KeyError, TypeError, ValueError):
             raise serializers.ValidationError("Format attendu: {lat: ..., lng: ...}")
+        b = SERVICE_AREA_BOUNDS
+        if not (b["lat_min"] <= lat <= b["lat_max"] and b["lng_min"] <= lng <= b["lng_max"]):
+            raise serializers.ValidationError(
+                "Position invalide ou hors de la zone de service. "
+                "Utilisez votre position actuelle ou choisissez un quartier."
+            )
+        return Point(lng, lat, srid=4326)
 
 
 class ServiceRequestSerializer(serializers.ModelSerializer):
@@ -37,7 +52,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "pickup_address", "pickup_location", "pickup_contact_name", "pickup_contact_phone", "pickup_instructions",
             "delivery_address", "delivery_location", "delivery_contact_name", "delivery_contact_phone", "delivery_instructions",
             "package_description", "package_size", "is_fragile", "estimated_weight_kg",
-            "estimated_price", "final_price", "distance_km",
+            "estimated_price", "final_price", "distance_km", "tip_amount",
             "assignment_type", "broadcast_radius_km", "preferred_courier", "payment_method",
             "status", "status_display",
             "accepted_at", "picked_up_at", "delivered_at", "cancelled_at",
@@ -46,7 +61,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "status", "courier",
             # P1 : le tarif et la distance sont calculés côté serveur
-            "estimated_price", "final_price", "distance_km",
+            "estimated_price", "final_price", "distance_km", "tip_amount",
             "accepted_at", "picked_up_at", "delivered_at", "cancelled_at", "created_at",
         ]
 
@@ -91,7 +106,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        from .pricing import compute_distance_km, compute_delivery_price
+        from .pricing import compute_distance_km, compute_delivery_price, snap_to_zone
 
         validated_data["client"] = self.context["request"].user
         # P1 : distance et tarif calculés côté serveur (source de vérité)
@@ -101,6 +116,9 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             distance = compute_distance_km(pickup, delivery)
             validated_data["distance_km"] = distance
             validated_data["estimated_price"] = compute_delivery_price(distance)
+            # P4 : rattachement aux quartiers pour les statistiques
+            validated_data["pickup_zone"] = snap_to_zone(pickup)
+            validated_data["delivery_zone"] = snap_to_zone(delivery)
         return super().create(validated_data)
 
 
@@ -132,13 +150,13 @@ class RideRequestSerializer(serializers.ModelSerializer):
             "pickup_address", "pickup_location",
             "dropoff_address", "dropoff_location",
             "passenger_count", "client_has_own_vehicle", "special_instructions",
-            "estimated_price", "final_price", "distance_km", "duration_minutes",
+            "estimated_price", "final_price", "distance_km", "duration_minutes", "tip_amount",
             "status", "status_display",
             "accepted_at", "started_at", "completed_at", "cancelled_at",
             "client_rating", "client_review", "created_at",
         ]
         read_only_fields = [
-            "id", "status", "driver", "estimated_price", "final_price",
+            "id", "status", "driver", "estimated_price", "final_price", "distance_km", "tip_amount",
             "accepted_at", "started_at", "completed_at", "cancelled_at", "created_at",
         ]
 
@@ -175,13 +193,48 @@ class RideRequestSerializer(serializers.ModelSerializer):
         return None
 
     def create(self, validated_data):
+        from .pricing import compute_distance_km, compute_ride_price, snap_to_zone
+
         validated_data["client"] = self.context["request"].user
+        # Distance et tarif calculés côté serveur (source de vérité)
+        pickup = validated_data.get("pickup_location")
+        dropoff = validated_data.get("dropoff_location")
+        if pickup and dropoff:
+            distance = compute_distance_km(pickup, dropoff)
+            validated_data["distance_km"] = distance
+            validated_data["estimated_price"] = compute_ride_price(distance)
+            # P4 : rattachement aux quartiers pour les statistiques
+            validated_data["pickup_zone"] = snap_to_zone(pickup)
+            validated_data["dropoff_zone"] = snap_to_zone(dropoff)
         return super().create(validated_data)
+
+
+class ZoneSerializer(serializers.ModelSerializer):
+    """Quartier de Bamako avec son centre {lat, lng}."""
+    center = PointField(read_only=True)
+
+    class Meta:
+        model = Zone
+        fields = ["id", "name", "commune", "center"]
+
+
+class QuoteRequestSerializer(serializers.Serializer):
+    """Entrée du endpoint /quote/ : deux points + type de service."""
+    pickup = PointField()
+    delivery = PointField()
+    kind = serializers.ChoiceField(choices=["delivery", "ride"], default="delivery")
 
 
 class RatingSerializer(serializers.Serializer):
     rating = serializers.IntegerField(min_value=1, max_value=5)
     review = serializers.CharField(required=False, allow_blank=True)
+
+
+class TipSerializer(serializers.Serializer):
+    """P4 : pourboire du client (100 % reversé au travailleur)."""
+    amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=100, max_value=25000
+    )
 
 
 class MessageSerializer(serializers.ModelSerializer):

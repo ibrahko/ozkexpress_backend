@@ -29,14 +29,18 @@ class OTPService:
         return otp
 
     @classmethod
+    def _twilio_client(cls):
+        from twilio.rest import Client
+        return Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+
+    @classmethod
     def send_sms(cls, phone: str, code: str) -> bool:
         """
         Envoie le code OTP par SMS via Twilio.
         Retourne True si l'envoi a réussi.
         """
         try:
-            from twilio.rest import Client
-            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+            client = cls._twilio_client()
             message = client.messages.create(
                 body=f"Votre code MotoExpress : {code}\nValide {cls.OTP_EXPIRY_MINUTES} minutes.",
                 from_=settings.TWILIO_PHONE_NUMBER,
@@ -49,18 +53,60 @@ class OTPService:
             return False
 
     @classmethod
+    def send_whatsapp(cls, phone: str, code: str) -> bool:
+        """
+        Envoie le code OTP via WhatsApp (Twilio Content API), avec le template
+        "Authentication" approuvé par Meta. Beaucoup moins cher que le SMS
+        (pas de sender_id à faire valider, tarif Meta "Rest of Africa").
+        Retourne True si l'envoi a réussi.
+        """
+        try:
+            client = cls._twilio_client()
+            message = client.messages.create(
+                from_=settings.TWILIO_WHATSAPP_NUMBER,  # "whatsapp:+14155238886"
+                to=f"whatsapp:{phone}",
+                content_sid=settings.TWILIO_WHATSAPP_CONTENT_SID,
+                content_variables=f'{{"1":"{code}"}}',
+            )
+            logger.info("WhatsApp OTP envoyé à %s, SID: %s", phone, message.sid)
+            return True
+        except Exception as e:
+            logger.error("Erreur envoi WhatsApp OTP à %s: %s", phone, str(e))
+            return False
+
+    @classmethod
     def request_otp(cls, phone: str) -> bool:
-        """Génère et envoie un OTP. Retourne le succès de l'envoi SMS."""
+        """
+        Génère et envoie un OTP. Ordre de priorité :
+          1. WhatsApp (si OTP_CHANNEL="whatsapp" et credentials configurés) — le moins cher
+          2. SMS (si WhatsApp échoue, ou si OTP_CHANNEL="sms")
+          3. Log uniquement (dev sans aucun credential configuré)
+        Retourne True si un canal a réussi (ou en mode dev sans credentials).
+        """
         otp = cls.create_otp(phone)
 
         # Toujours logger le code (utile en dev et pour debug prod)
         logger.info(">>> OTP [%s] code=%s <<<", phone, otp.code)
 
-        # Envoyer par SMS si les credentials Twilio sont configurés
-        if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_PHONE_NUMBER:
-            return cls.send_sms(phone, otp.code)
+        has_twilio = bool(settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN)
+        has_whatsapp = bool(settings.TWILIO_WHATSAPP_NUMBER and settings.TWILIO_WHATSAPP_CONTENT_SID)
+        has_sms = bool(settings.TWILIO_PHONE_NUMBER)
 
-        # Pas de credentials Twilio : on retourne True (mode dev sans SMS)
+        if has_twilio and settings.OTP_CHANNEL == "whatsapp" and has_whatsapp:
+            if cls.send_whatsapp(phone, otp.code):
+                return True
+            logger.warning("WhatsApp OTP échoué pour %s, tentative SMS en secours.", phone)
+
+        if has_twilio and has_sms:
+            sent = cls.send_sms(phone, otp.code)
+            if not sent and getattr(settings, "OTP_ALLOW_SMS_FAILURE", False):
+                # Mode test : le SMS a échoué (ex. numéro non vérifié en trial Twilio)
+                # mais l'OTP est valide et lisible dans les logs → on ne bloque pas.
+                logger.warning("SMS non envoyé à %s — accepté (OTP_ALLOW_SMS_FAILURE).", phone)
+                return True
+            return sent
+
+        # Aucun credential configuré : mode dev, OTP visible en console uniquement
         logger.warning("Twilio non configuré — OTP affiché en console uniquement.")
         return True
 
