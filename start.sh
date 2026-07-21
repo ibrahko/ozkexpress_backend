@@ -6,9 +6,10 @@ echo "=== MotoExpress Backend - Démarrage ==="
 echo ">>> Activation PostGIS..."
 python manage.py setup_postgis
 
-echo ">>> Génération des migrations..."
-python manage.py makemigrations --noinput
-
+# Les migrations doivent être générées en développement (`makemigrations`)
+# et commitées dans Git — jamais générées à la volée en production.
+# Les générer au démarrage crée un risque de désynchronisation entre
+# l'historique enregistré en base et les fichiers réellement déployés.
 echo ">>> Migrations..."
 python manage.py migrate --noinput
 

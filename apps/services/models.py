@@ -419,7 +419,13 @@ class Message(BaseModel):
         verbose_name = "Message"
         verbose_name_plural = "Messages"
         ordering = ["created_at"]
-        indexes = [models.Index(fields=["service_request", "created_at"])]
+        # Nom explicite : évite qu'un futur `makemigrations` ne détecte un
+        # écart si l'algorithme de nommage auto de Django change de version.
+        indexes = [
+            models.Index(
+                fields=["service_request", "created_at"], name="services_me_service_530197_idx"
+            )
+        ]
 
     def __str__(self):
         return f"Message de {self.sender_id} sur #{str(self.service_request_id)[:8]}"
