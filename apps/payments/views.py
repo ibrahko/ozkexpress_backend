@@ -2,12 +2,12 @@ from rest_framework import generics, viewsets, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from core.throttles import PaymentInitiateThrottle
-from .models import Transaction, Wallet, WithdrawalRequest, PaymentType, PaymentStatus
+from .models import Transaction, Wallet, WithdrawalRequest, PaymentType
 from .serializers import (
     TransactionSerializer, InitiatePaymentSerializer,
     WalletSerializer, WithdrawalRequestSerializer,
 )
-from .services import PaymentService, generate_reference
+from .services import PaymentService, WebhookError, WebhookVerifier, generate_reference
 import logging
 
 logger = logging.getLogger(__name__)
@@ -82,29 +82,28 @@ class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
 class PaymentWebhookView(generics.GenericAPIView):
     """
     POST /api/v1/payments/webhook/{provider}/
-    Endpoint appelé par les providers (Orange Money, Wave) pour confirmer le paiement.
+    Endpoint appelé par les providers (Orange Money, Wave, Stripe) pour confirmer
+    le paiement. Le message est authentifié par WebhookVerifier avant tout effet.
     """
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request, provider):
-        data = request.data
-        logger.info("Webhook %s reçu: %s", provider, data)
-
-        reference = data.get("order_id") or data.get("client_reference") or data.get("reference")
-        provider_tx_id = data.get("txnid") or data.get("id") or data.get("transaction_id", "")
-
-        if not reference:
-            return Response({"detail": "reference manquante."}, status=status.HTTP_400_BAD_REQUEST)
-
+        # Corps brut (avant tout parsing) : c'est lui qui est signé par le provider
+        raw_body = request.body
         try:
-            transaction = Transaction.objects.get(reference=reference)
-        except Transaction.DoesNotExist:
-            return Response({"detail": "Transaction introuvable."}, status=status.HTTP_404_NOT_FOUND)
+            confirmed = WebhookVerifier.verify(provider, request.headers, raw_body)
+        except WebhookError as e:
+            logger.warning("Webhook %s refusé : %s", provider, e)
+            return Response({"detail": str(e)}, status=e.status_code)
 
-        if transaction.status == PaymentStatus.COMPLETED:
+        if confirmed is None:
+            return Response({"detail": "Ignoré."})
+
+        transaction, provider_tx_id, payload = confirmed
+        if not PaymentService.complete_from_webhook(transaction, provider_tx_id, payload):
             return Response({"detail": "Déjà traité."})
-
-        transaction.mark_completed(provider_tx_id=provider_tx_id, response=data)
+        logger.info("Webhook %s : transaction %s payée.", provider, transaction.reference)
         return Response({"detail": "OK"})
 
 

@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 from core.models import BaseModel
 
 
@@ -114,17 +115,45 @@ class Wallet(BaseModel):
     def __str__(self):
         return f"Wallet {self.user.get_full_name()} — {self.balance} {self.currency}"
 
+    # Les mises à jour passent par des expressions F() (calcul fait par la base) :
+    # deux opérations simultanées ne peuvent pas s'écraser l'une l'autre.
+
     def credit(self, amount):
-        self.balance += amount
-        self.total_earned += amount
-        self.save(update_fields=["balance", "total_earned", "updated_at"])
+        self._apply(balance=amount, total_earned=amount)
 
     def debit(self, amount):
-        if amount > self.balance:
+        updated = Wallet.objects.filter(pk=self.pk, balance__gte=amount).update(
+            balance=models.F("balance") - amount,
+            total_withdrawn=models.F("total_withdrawn") + amount,
+            updated_at=timezone.now(),
+        )
+        if not updated:
             raise ValueError("Solde insuffisant.")
-        self.balance -= amount
-        self.total_withdrawn += amount
-        self.save(update_fields=["balance", "total_withdrawn", "updated_at"])
+        self.refresh_from_db(fields=["balance", "total_withdrawn", "updated_at"])
+
+    def _apply(self, **deltas):
+        Wallet.objects.filter(pk=self.pk).update(
+            updated_at=timezone.now(),
+            **{field: models.F(field) + amount for field, amount in deltas.items()},
+        )
+        self.refresh_from_db(fields=[*deltas, "updated_at"])
+
+    @classmethod
+    def apply_earning(cls, user, net, commission, paid_in_cash: bool):
+        """
+        Répercute une course/livraison terminée sur le portefeuille du travailleur.
+        - Paiement électronique : l'entreprise a encaissé → on crédite le net.
+        - Espèces : le travailleur a déjà le montant total en poche → il doit la
+          commission à l'entreprise, déduite du solde (qui peut devenir négatif,
+          ce qui bloque les retraits jusqu'à régularisation).
+        Dans les deux cas, total_earned augmente du net.
+        """
+        wallet, _ = cls.objects.get_or_create(user=user)
+        if paid_in_cash:
+            wallet._apply(balance=-commission, total_earned=net)
+        else:
+            wallet._apply(balance=net, total_earned=net)
+        return wallet
 
 
 class WithdrawalRequest(BaseModel):

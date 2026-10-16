@@ -272,6 +272,8 @@ ORANGE_MONEY_CLIENT_SECRET = env("ORANGE_MONEY_CLIENT_SECRET", default="")
 # Wave
 WAVE_API_URL = env("WAVE_API_URL", default="https://api.wave.com/v1")
 WAVE_API_KEY = env("WAVE_API_KEY", default="")
+# Secret de signature des webhooks (tableau de bord Wave Business → Webhooks)
+WAVE_WEBHOOK_SECRET = env("WAVE_WEBHOOK_SECRET", default="")
 
 # Google Maps
 GOOGLE_MAPS_API_KEY = env("GOOGLE_MAPS_API_KEY", default="")
