@@ -48,7 +48,11 @@ def make_delivery(client, **kwargs):
         pickup_location=PICKUP,
         delivery_address="Zone Industrielle",
         delivery_location=DROPOFF,
-        estimated_price=Decimal("2356"),
+        # Prix "de jour" pour 5,68 km avec le barème validé (400 + 200/km + 400,
+        # arrondi 25 F) : (400 + 1136) + 400 = 1936 → 1925. Garder cette valeur
+        # alignée sur compute_delivery_price(5.68, multiplier=1.0) évite tout
+        # surcoût "nuit" fantôme détecté par split_night_surcharge().
+        estimated_price=Decimal("1925"),
         distance_km=Decimal("5.68"),
     )
     defaults.update(kwargs)
@@ -77,7 +81,7 @@ class DeliveryTransitionTests(TestCase):
         self.assertEqual(self.request.status, RequestStatus.DELIVERED)
         self.assertIsNotNone(self.request.delivered_at)
         # Le prix final est figé sur le prix estimé
-        self.assertEqual(self.request.final_price, Decimal("2356"))
+        self.assertEqual(self.request.final_price, Decimal("1925"))
 
     def test_gain_coursier_cree_et_idempotent(self):
         self.request.accept(self.courier)
@@ -86,10 +90,11 @@ class DeliveryTransitionTests(TestCase):
         earnings = CourierEarning.objects.filter(service_request=self.request)
         self.assertEqual(earnings.count(), 1)
         e = earnings.first()
-        # Commission ≈ frais de service (220), net ≈ brut − commission.
+        # Prix de jour (pas de majoration nuit sur cette fixture) : commission
+        # = frais de service (400 F), net = brut − commission.
         # Tolérance : save() recalcule la commission depuis le taux arrondi à 2 décimales.
-        self.assertAlmostEqual(float(e.commission_amount), 220, delta=0.5)
-        self.assertAlmostEqual(float(e.net_amount), 2136, delta=0.5)
+        self.assertAlmostEqual(float(e.commission_amount), 400, delta=0.5)
+        self.assertAlmostEqual(float(e.net_amount), 1525, delta=0.5)
 
         # Rejouer la livraison ne crée pas de doublon
         self.request._create_courier_earning()
@@ -115,7 +120,8 @@ class RideTransitionTests(TestCase):
             pickup_location=PICKUP,
             dropoff_address="Zone Industrielle",
             dropoff_location=DROPOFF,
-            estimated_price=Decimal("2356"),
+            # Même valeur "prix de jour" que pour les livraisons (formule générique partout)
+            estimated_price=Decimal("1925"),
             distance_km=Decimal("5.68"),
         )
 
@@ -128,7 +134,7 @@ class RideTransitionTests(TestCase):
 
         self.ride.complete()
         self.assertEqual(self.ride.status, RideStatus.COMPLETED)
-        self.assertEqual(self.ride.final_price, Decimal("2356"))
+        self.assertEqual(self.ride.final_price, Decimal("1925"))
 
     def test_gain_chauffeur_cree_et_idempotent(self):
         self.ride.accept(self.driver)
@@ -137,9 +143,9 @@ class RideTransitionTests(TestCase):
         earnings = DriverEarning.objects.filter(ride_request=self.ride)
         self.assertEqual(earnings.count(), 1)
         e = earnings.first()
-        self.assertEqual(e.gross_amount, Decimal("2356"))
+        self.assertEqual(e.gross_amount, Decimal("1925"))
         # net = brut − commission (DriverEarning.save recalcule via le taux)
-        self.assertAlmostEqual(float(e.net_amount), 2136, delta=1)
+        self.assertAlmostEqual(float(e.net_amount), 1525, delta=1)
 
         self.ride._create_driver_earning()
         self.assertEqual(DriverEarning.objects.filter(ride_request=self.ride).count(), 1)

@@ -38,7 +38,11 @@ class QuoteApiTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(data["per_km"], 200)
-        self.assertEqual(data["base"] + data["distance_fee"] + data["service_fee"], data["total"])
+        # total = base + distance + frais + majoration éventuelle (nuit ×1,3)
+        self.assertEqual(
+            data["base"] + data["distance_fee"] + data["service_fee"] + data["surcharge"],
+            data["total"],
+        )
         self.assertGreater(data["distance_km"], 0)
 
     def test_quote_course(self):
@@ -133,6 +137,9 @@ class ServiceRequestValidationTests(APITestCase):
         data = res.json()
         self.assertIsNotNone(data["distance_km"])
         self.assertIsNotNone(data["estimated_price"])
-        # total = 1000 + distance×200 + 220
-        attendu = 1000 + round(float(data["distance_km"]) * 200) + 220
-        self.assertAlmostEqual(float(data["estimated_price"]), attendu, delta=1)
+        # Recalcul via la même fonction que le serveur (source de vérité) :
+        # robuste au jour/nuit et à l'arrondi 25 F, sans dupliquer la formule.
+        from decimal import Decimal
+        from apps.services.pricing import compute_delivery_price
+        attendu = compute_delivery_price(data["distance_km"])
+        self.assertEqual(Decimal(str(data["estimated_price"])), attendu)

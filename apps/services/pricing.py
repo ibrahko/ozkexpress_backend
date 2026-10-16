@@ -2,7 +2,11 @@
 Tarification des livraisons et des courses — source de vérité côté serveur.
 
 Formule :
-    total = (prise en charge + distance × tarif/km) × majoration + frais de service
+    total = arrondi_25[ (prise en charge + distance × tarif/km) × majoration + frais de service ]
+
+Barème validé (juillet 2026) :
+    prise en charge = 400 F, tarif/km = 200 F, frais de service = 400 F,
+    arrondi au multiple de 25 F le plus proche (adapté aux pièces FCFA).
 
 Résolution de la distance (du plus précis au moins précis) :
     1. Matrice de distances entre quartiers (ZoneDistance, saisie dans l'admin)
@@ -10,8 +14,10 @@ Résolution de la distance (du plus précis au moins précis) :
     3. Haversine × facteur routier (défaut 1.3)
 
 Majorations (multiplicateur sur prise en charge + distance, jamais sur les frais) :
-    - Nuit (21 h – 6 h, heure de Bamako) : PRICING_NIGHT_MULTIPLIER (défaut 1.0 = désactivé)
+    - Nuit (21 h – 6 h, heure de Bamako) : PRICING_NIGHT_MULTIPLIER (défaut 1.3)
     - Forte demande / pluie : PRICING_SURGE_MULTIPLIER (défaut 1.0, à piloter via env)
+    La majoration nuit est répartie 85 % coursier/chauffeur — 15 % entreprise
+    (voir PRICING_NIGHT_COURIER_SHARE et apps/services/models.py::_create_*_earning).
 
 Monitoring : tout prix total > PRICE_ALERT_THRESHOLD (défaut 20 000 F) est loggé
 en warning (visible dans Sentry si configuré).
@@ -21,7 +27,7 @@ Montants surchargeables via settings :
     RIDE_BASE_FARE, RIDE_PER_KM, RIDE_SERVICE_FEE,
     DELIVERY_ROAD_FACTOR, ZONE_SNAP_RADIUS_KM, OSRM_URL,
     PRICING_NIGHT_MULTIPLIER, PRICING_NIGHT_START_HOUR, PRICING_NIGHT_END_HOUR,
-    PRICING_SURGE_MULTIPLIER, PRICE_ALERT_THRESHOLD
+    PRICING_NIGHT_COURIER_SHARE, PRICING_SURGE_MULTIPLIER, PRICE_ALERT_THRESHOLD
 """
 import logging
 import math
@@ -32,18 +38,21 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 # Livraisons (colis)
-BASE_FARE = Decimal(str(getattr(settings, "DELIVERY_BASE_FARE", 1000)))
+BASE_FARE = Decimal(str(getattr(settings, "DELIVERY_BASE_FARE", 400)))
 PER_KM = Decimal(str(getattr(settings, "DELIVERY_PER_KM", 200)))
-SERVICE_FEE = Decimal(str(getattr(settings, "DELIVERY_SERVICE_FEE", 220)))
+SERVICE_FEE = Decimal(str(getattr(settings, "DELIVERY_SERVICE_FEE", 400)))
 
-# Courses (transport de personnes) — même barème par défaut, ajustable séparément
-RIDE_BASE_FARE = Decimal(str(getattr(settings, "RIDE_BASE_FARE", 1000)))
+# Courses (transport de personnes) — même barème (formule générique partout)
+RIDE_BASE_FARE = Decimal(str(getattr(settings, "RIDE_BASE_FARE", 400)))
 RIDE_PER_KM = Decimal(str(getattr(settings, "RIDE_PER_KM", 200)))
-RIDE_SERVICE_FEE = Decimal(str(getattr(settings, "RIDE_SERVICE_FEE", 220)))
+RIDE_SERVICE_FEE = Decimal(str(getattr(settings, "RIDE_SERVICE_FEE", 400)))
 
 MIN_DISTANCE_KM = Decimal("0.5")
 # La distance routière réelle est ~30 % plus longue que le vol d'oiseau
 ROAD_FACTOR = Decimal(str(getattr(settings, "DELIVERY_ROAD_FACTOR", 1.3)))
+
+# Arrondi final : multiple de 25 F le plus proche (pièces FCFA : 5, 10, 25, 50, 100…)
+PRICE_ROUND_STEP = Decimal(str(getattr(settings, "PRICE_ROUND_STEP", 25)))
 
 # Rayon (km) pour rattacher un point au quartier le plus proche
 ZONE_SNAP_RADIUS_KM = float(getattr(settings, "ZONE_SNAP_RADIUS_KM", 1.5))
@@ -52,10 +61,13 @@ ZONE_SNAP_RADIUS_KM = float(getattr(settings, "ZONE_SNAP_RADIUS_KM", 1.5))
 OSRM_URL = getattr(settings, "OSRM_URL", "")
 
 # Majorations
-NIGHT_MULTIPLIER = Decimal(str(getattr(settings, "PRICING_NIGHT_MULTIPLIER", 1.0)))
+NIGHT_MULTIPLIER = Decimal(str(getattr(settings, "PRICING_NIGHT_MULTIPLIER", 1.3)))
 NIGHT_START_HOUR = int(getattr(settings, "PRICING_NIGHT_START_HOUR", 21))
 NIGHT_END_HOUR = int(getattr(settings, "PRICING_NIGHT_END_HOUR", 6))
 SURGE_MULTIPLIER = Decimal(str(getattr(settings, "PRICING_SURGE_MULTIPLIER", 1.0)))
+
+# Part de la majoration nuit reversée au coursier/chauffeur (le reste va à l'entreprise)
+NIGHT_COURIER_SHARE = Decimal(str(getattr(settings, "PRICING_NIGHT_COURIER_SHARE", "0.85")))
 
 # Seuil d'alerte prix aberrant
 PRICE_ALERT_THRESHOLD = Decimal(str(getattr(settings, "PRICE_ALERT_THRESHOLD", 20000)))
@@ -158,11 +170,18 @@ def current_multiplier(when=None) -> Decimal:
     return multiplier.quantize(Decimal("0.01"))
 
 
+def round_to_step(amount) -> Decimal:
+    """Arrondit au multiple de PRICE_ROUND_STEP (25 F) le plus proche."""
+    a = Decimal(str(amount))
+    steps = (a / PRICE_ROUND_STEP).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return steps * PRICE_ROUND_STEP
+
+
 def _compute_price(distance_km, base, per_km, fee, multiplier=None) -> Decimal:
     d = Decimal(str(distance_km))
     m = multiplier if multiplier is not None else current_multiplier()
     total = (base + d * per_km) * m + fee
-    total = total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    total = round_to_step(total)
     if total > PRICE_ALERT_THRESHOLD:
         logger.warning(
             "Prix aberrant détecté : %s FCFA (distance=%s km, multiplicateur=%s)",
@@ -172,13 +191,44 @@ def _compute_price(distance_km, base, per_km, fee, multiplier=None) -> Decimal:
 
 
 def compute_delivery_price(distance_km, multiplier=None) -> Decimal:
-    """Prix total d'une livraison, arrondi au franc."""
+    """Prix total d'une livraison, arrondi au multiple de 25 F le plus proche."""
     return _compute_price(distance_km, BASE_FARE, PER_KM, SERVICE_FEE, multiplier)
 
 
 def compute_ride_price(distance_km, multiplier=None) -> Decimal:
-    """Prix total d'une course, arrondi au franc."""
+    """Prix total d'une course, arrondi au multiple de 25 F le plus proche."""
     return _compute_price(distance_km, RIDE_BASE_FARE, RIDE_PER_KM, RIDE_SERVICE_FEE, multiplier)
+
+
+def split_night_surcharge(final_price, distance_km, kind: str = "delivery") -> tuple:
+    """
+    Répartit la majoration nuit éventuellement incluse dans `final_price` :
+    85 % coursier/chauffeur, 15 % entreprise (NIGHT_COURIER_SHARE).
+    Retourne (frais_de_service_total_entreprise, part_coursier_du_surcharge).
+    Si aucune majoration n'a été appliquée (prix de jour), équivaut au
+    comportement historique : commission entreprise = SERVICE_FEE, le reste au coursier.
+    """
+    price = Decimal(str(final_price))
+    fee = RIDE_SERVICE_FEE if kind == "ride" else SERVICE_FEE
+    if distance_km is None:
+        return fee, price - fee
+
+    day_price = _compute_price(
+        distance_km,
+        RIDE_BASE_FARE if kind == "ride" else BASE_FARE,
+        RIDE_PER_KM if kind == "ride" else PER_KM,
+        fee,
+        multiplier=Decimal("1.0"),
+    )
+    surcharge = price - day_price
+    if surcharge <= 0:
+        return fee, price - fee
+
+    company_share = (surcharge * (Decimal("1") - NIGHT_COURIER_SHARE)).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    commission = min(fee + company_share, price)
+    return commission, price - commission
 
 
 def quote(pickup_point, delivery_point, kind: str = "delivery") -> dict:

@@ -176,10 +176,14 @@ class ServiceRequest(BaseModel):
             self._create_courier_earning()
 
     def _create_courier_earning(self):
-        """P4 : gain du coursier = prix − frais de service (aligné sur l'app mobile)."""
+        """
+        P4 : gain du coursier = prix − commission entreprise.
+        Commission = frais de service (400 F) de jour ; la nuit, la majoration
+        est en plus répartie 85 % coursier / 15 % entreprise (split_night_surcharge).
+        """
         from decimal import Decimal
         from apps.couriers.models import CourierEarning
-        from .pricing import SERVICE_FEE
+        from .pricing import split_night_surcharge
 
         if self.final_price is None or self.courier is None:
             return
@@ -187,7 +191,8 @@ class ServiceRequest(BaseModel):
             return  # idempotent
 
         gross = Decimal(self.final_price)
-        commission = min(SERVICE_FEE, gross)
+        commission, _net = split_night_surcharge(gross, self.distance_km, kind="delivery")
+        commission = min(commission, gross)
         rate = (commission / gross * Decimal("100")).quantize(Decimal("0.01")) if gross else Decimal("0.00")
         CourierEarning.objects.create(
             courier=self.courier,
@@ -337,10 +342,14 @@ class RideRequest(BaseModel):
             self._create_driver_earning()
 
     def _create_driver_earning(self):
-        """Gain du chauffeur = prix − frais de service (aligné sur les coursiers)."""
+        """
+        Gain du chauffeur = prix − commission entreprise (aligné sur les coursiers).
+        Commission = frais de service (400 F) de jour ; la nuit, la majoration
+        est en plus répartie 85 % chauffeur / 15 % entreprise (split_night_surcharge).
+        """
         from decimal import Decimal
         from apps.drivers.models import DriverEarning
-        from .pricing import RIDE_SERVICE_FEE
+        from .pricing import split_night_surcharge
 
         if self.final_price is None or self.driver is None:
             return
@@ -348,7 +357,8 @@ class RideRequest(BaseModel):
             return  # idempotent
 
         gross = Decimal(self.final_price)
-        commission = min(RIDE_SERVICE_FEE, gross)
+        commission, _net = split_night_surcharge(gross, self.distance_km, kind="ride")
+        commission = min(commission, gross)
         rate = (commission / gross * Decimal("100")).quantize(Decimal("0.01")) if gross else Decimal("0.00")
         DriverEarning.objects.create(
             driver=self.driver,
