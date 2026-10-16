@@ -3,7 +3,7 @@ Settings pour le déploiement Railway (test/staging).
 Railway gère SSL au niveau du load balancer, donc on désactive SECURE_SSL_REDIRECT.
 """
 import os
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse
 from .base import *
 
 DEBUG = False

@@ -6,14 +6,13 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
 from core.throttles import OtpVerifyThrottle, OtpRequestThrottle
-from .models import User, UserAddress
+from .models import UserAddress
 from .serializers import (
     PhoneSerializer,
     OTPVerifySerializer,
     UserSerializer,
     UserUpdateSerializer,
     UserAddressSerializer,
-    TokenResponseSerializer,
     PasswordLoginSerializer,
     ChangePasswordSerializer,
     CourierRegisterSerializer,

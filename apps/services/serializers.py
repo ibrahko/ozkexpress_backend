@@ -1,7 +1,7 @@
 from django.conf import settings
 from rest_framework import serializers
 from django.contrib.gis.geos import Point
-from .models import ServiceRequest, RideRequest, RequestStatus, RideStatus, Message, Zone
+from .models import ServiceRequest, RideRequest, Message, Zone
 
 # Zone de service (Bamako et environs, avec marge). Surchargeable via settings.
 # Empêche les coordonnées (0,0) ou hors zone qui produisent des prix aberrants.

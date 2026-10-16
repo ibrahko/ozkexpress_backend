@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.urls import path
-from django.db.models import Count, Sum, Avg
+from django.db.models import Sum, Avg
 from django.utils import timezone
 from datetime import timedelta
 

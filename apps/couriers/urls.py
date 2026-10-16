@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from core.permissions import IsCourier, IsAdminUser
+from core.permissions import IsCourier
 from .models import Courier, CourierEarning, FavoriteCourier
 
 

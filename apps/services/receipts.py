@@ -75,11 +75,11 @@ class ServiceReceiptView(APIView):
         p = canvas.Canvas(buf, pagesize=A5)
 
         # En-tête
-        p.setFillColorRGB(1, 0.42, 0)  # orange MotoExpress
+        p.setFillColorRGB(1, 0.42, 0)  # orange OzkExpress
         p.rect(0, h - 30 * mm, w, 30 * mm, fill=1, stroke=0)
         p.setFillColorRGB(1, 1, 1)
         p.setFont("Helvetica-Bold", 18)
-        p.drawString(15 * mm, h - 15 * mm, "MotoExpress")
+        p.drawString(15 * mm, h - 15 * mm, "OzkExpress")
         p.setFont("Helvetica", 10)
         p.drawString(15 * mm, h - 22 * mm, f"Reçu de livraison {ref}")
 
@@ -118,7 +118,7 @@ class ServiceReceiptView(APIView):
 
         p.setFont("Helvetica", 7)
         p.setFillColorRGB(0.5, 0.5, 0.5)
-        p.drawCentredString(w / 2, 12 * mm, "Merci d'avoir choisi MotoExpress — Vite. Fiable. Partout.")
+        p.drawCentredString(w / 2, 12 * mm, "Merci d'avoir choisi OzkExpress — Vite. Fiable. Partout.")
 
         p.showPage()
         p.save()

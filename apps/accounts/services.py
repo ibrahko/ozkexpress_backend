@@ -42,7 +42,7 @@ class OTPService:
         try:
             client = cls._twilio_client()
             message = client.messages.create(
-                body=f"Votre code MotoExpress : {code}\nValide {cls.OTP_EXPIRY_MINUTES} minutes.",
+                body=f"Votre code OzkExpress : {code}\nValide {cls.OTP_EXPIRY_MINUTES} minutes.",
                 from_=settings.TWILIO_PHONE_NUMBER,
                 to=phone,
             )

@@ -1,8 +1,5 @@
 from rest_framework import serializers
-from django.utils import timezone
 from django.db import transaction
-from datetime import timedelta
-import random
 from .models import User, OTPCode, UserAddress
 from .enums import UserType
 

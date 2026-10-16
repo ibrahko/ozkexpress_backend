@@ -1,9 +1,8 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
-from core.permissions import IsClient
 from .models import Vehicle, VehicleRental, VehicleStatus, RentalStatus
 from .serializers import VehicleSerializer, VehicleRentalSerializer
 

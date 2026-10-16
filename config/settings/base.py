@@ -215,7 +215,7 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "MotoExpress API",
+    "TITLE": "OzkExpress API",
     "DESCRIPTION": "API de livraison express par moto-taxi",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,

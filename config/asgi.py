@@ -1,5 +1,4 @@
 import os
-from channels.auth import AuthMiddlewareStack
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
 from django.core.asgi import get_asgi_application
@@ -19,7 +18,6 @@ class JWTAuthMiddleware:
 
     async def __call__(self, scope, receive, send):
         from urllib.parse import parse_qs
-        from django.contrib.auth.models import AnonymousUser
         query_string = scope.get("query_string", b"").decode()
         params = parse_qs(query_string)
         token = params.get("token", [None])[0]
