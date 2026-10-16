@@ -1,49 +1,214 @@
 {% extends 'admin/base.html' %}
-{% load i18n unfold %}
+{% load i18n static unfold %}
 
 {% block title %}Tableau de bord | {{ site_title }}{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+{% endblock %}
 
 {% block branding %}
     {% include "unfold/helpers/site_branding.html" %}
 {% endblock %}
 
 {% block content %}
-    {# Indicateurs du jour #}
-    <div class="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2 xl:grid-cols-4">
+<div class="ozk">
+
+    {# ── Bandeau d'accueil ─────────────────────────────────────────── #}
+    <section class="ozk-hero">
+        <div>
+            <p class="ozk-hero__date">{{ today|date:"l j F Y"|capfirst }} · Bamako</p>
+            <h1 class="ozk-hero__title">{{ greeting }}{% if first_name %} {{ first_name }}{% endif %} 👋</h1>
+            <p class="ozk-hero__subtitle">
+                {% if todo_open %}
+                    {{ todo_open }} sujet{{ todo_open|pluralize }} demande{{ todo_open|pluralize:"nt" }} votre attention aujourd'hui.
+                {% else %}
+                    Tout est à jour. Belle journée de livraisons !
+                {% endif %}
+            </p>
+        </div>
+        <div class="ozk-hero__actions">
+            <a class="ozk-pill" href="{{ orders_url }}?status__exact=pending">
+                <span class="material-symbols-outlined">hourglass_top</span>Commandes en attente
+            </a>
+            <a class="ozk-pill" href="{{ couriers_url }}?status__exact=online">
+                <span class="material-symbols-outlined">two_wheeler</span>Coursiers en ligne
+            </a>
+        </div>
+    </section>
+
+    {# ── Indicateurs ───────────────────────────────────────────────── #}
+    <section class="ozk-kpis">
         {% for kpi in kpis %}
-            {% component "unfold/components/card.html" with icon=kpi.icon footer=kpi.footer %}
-                {% component "unfold/components/text.html" %}{{ kpi.title }}{% endcomponent %}
-                {% component "unfold/components/title.html" %}{{ kpi.value }}{% endcomponent %}
-            {% endcomponent %}
+            <article class="ozk-card ozk-kpi{% if kpi.alert %} ozk-kpi--alert{% endif %}">
+                <header class="ozk-kpi__head">
+                    <span class="ozk-kpi__label">{{ kpi.label }}</span>
+                    <span class="ozk-icon-chip material-symbols-outlined">{{ kpi.icon }}</span>
+                </header>
+                <div class="ozk-kpi__value">{{ kpi.value }}</div>
+                <footer class="ozk-kpi__foot">
+                    {% if kpi.trend %}
+                        <span class="ozk-trend ozk-trend--{{ kpi.trend.direction }}">
+                            {% if kpi.trend.direction == "up" %}↑{% elif kpi.trend.direction == "down" %}↓{% endif %}
+                            {{ kpi.trend.text }}
+                        </span>
+                    {% endif %}
+                    {% if kpi.sub %}<span class="ozk-kpi__sub">{{ kpi.sub }}</span>{% endif %}
+                    {% if kpi.spark %}
+                        <svg class="ozk-spark" viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true">
+                            <polyline points="{{ kpi.spark }}"/>
+                        </svg>
+                    {% endif %}
+                </footer>
+            </article>
         {% endfor %}
-    </div>
+    </section>
 
-    <div class="grid grid-cols-1 gap-6 mb-8 lg:grid-cols-3">
-        {# À traiter #}
-        {% component "unfold/components/card.html" with title="À traiter" %}
-            <div class="flex flex-col gap-4">
-                {% for item in todo %}
-                    <a href="{{ item.url }}" class="flex items-center justify-between gap-4">
-                        <span class="text-sm">{{ item.label }}{% if item.detail and item.count %} <span class="text-xs text-font-subtle-light">({{ item.detail }})</span>{% endif %}</span>
-                        {% if item.count %}
-                            {% component "unfold/helpers/label.html" with variant="warning" text=item.count %}{% endcomponent %}
-                        {% else %}
-                            {% component "unfold/helpers/label.html" with variant="success" text="0" %}{% endcomponent %}
-                        {% endif %}
-                    </a>
-                {% endfor %}
+    {# ── Activité + À traiter ──────────────────────────────────────── #}
+    <section class="ozk-grid ozk-grid--2-1">
+        <article class="ozk-card">
+            <header class="ozk-card__head">
+                <h2>{{ chart_title }}</h2>
+                <div class="ozk-legend">
+                    <span><i class="ozk-swatch ozk-swatch--done"></i>Livrées</span>
+                    <span><i class="ozk-swatch ozk-swatch--open"></i>En cours</span>
+                    <span><i class="ozk-swatch ozk-swatch--cancel"></i>Annulées</span>
+                </div>
+            </header>
+            <div class="ozk-chart">
+                {% component "unfold/components/chart/bar.html" with data=chart_data height=280 %}{% endcomponent %}
             </div>
-        {% endcomponent %}
+        </article>
 
-        {# Activité des derniers jours #}
-        {% component "unfold/components/card.html" with title=chart_title class="lg:col-span-2" %}
-            {% component "unfold/components/chart/bar.html" with data=chart_data height=260 %}{% endcomponent %}
-        {% endcomponent %}
-    </div>
+        <article class="ozk-card">
+            <header class="ozk-card__head">
+                <h2>À traiter</h2>
+                {% if todo_open %}<span class="ozk-count">{{ todo_open }}</span>{% endif %}
+            </header>
+            <ul class="ozk-todo">
+                {% for item in todo %}
+                    <li>
+                        <a href="{{ item.url }}" class="ozk-todo__item{% if item.count %} ozk-todo__item--{{ item.level }}{% else %} ozk-todo__item--done{% endif %}">
+                            <span class="ozk-todo__icon material-symbols-outlined">{% if item.count %}{{ item.icon }}{% else %}check{% endif %}</span>
+                            <span class="ozk-todo__label">
+                                {{ item.label }}
+                                {% if item.detail and item.count %}<small>{{ item.detail }}</small>{% endif %}
+                            </span>
+                            <span class="ozk-todo__count">{{ item.count }}</span>
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </article>
+    </section>
 
-    {# Dernières commandes #}
-    {% component "unfold/components/card.html" with title="Dernières livraisons" %}
-        {% component "unfold/components/table.html" with table=latest_orders card_included=1 striped=1 %}{% endcomponent %}
-        <div class="mt-1 text-sm"><a href="{{ orders_url }}" class="text-primary-600">Voir toutes les livraisons →</a></div>
-    {% endcomponent %}
+    {# ── Carte en direct + meilleurs coursiers ─────────────────────── #}
+    <section class="ozk-grid ozk-grid--2-1">
+        <article class="ozk-card ozk-card--flush">
+            <header class="ozk-card__head">
+                <h2>Carte en direct</h2>
+                <div class="ozk-legend">
+                    <span><i class="ozk-dot ozk-dot--online"></i>Disponible</span>
+                    <span><i class="ozk-dot ozk-dot--busy"></i>En course</span>
+                    <span><i class="ozk-dot ozk-dot--order"></i>Commande en attente</span>
+                </div>
+            </header>
+            <div id="ozk-map" class="ozk-map" data-map="{{ map_data }}"></div>
+        </article>
+
+        <article class="ozk-card">
+            <header class="ozk-card__head">
+                <h2>Meilleurs coursiers · 7 jours</h2>
+            </header>
+            {% if top_couriers %}
+                <ol class="ozk-top">
+                    {% for c in top_couriers %}
+                        <li>
+                            <a href="{{ c.url }}">
+                                <span class="ozk-rank">{{ forloop.counter }}</span>
+                                <span class="ozk-avatar">{{ c.initials }}</span>
+                                <span class="ozk-top__name">{{ c.name }}<small>★ {{ c.rating|floatformat:1 }} · {{ c.deliveries }} livraison{{ c.deliveries|pluralize }}</small></span>
+                                <span class="ozk-top__amount">{{ c.net }}</span>
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ol>
+            {% else %}
+                <div class="ozk-empty">
+                    <span class="material-symbols-outlined">emoji_events</span>
+                    <p>Le classement apparaîtra après les premières livraisons de la semaine.</p>
+                </div>
+            {% endif %}
+        </article>
+    </section>
+
+    {# ── Dernières livraisons ──────────────────────────────────────── #}
+    <article class="ozk-card ozk-card--flush">
+        <header class="ozk-card__head">
+            <h2>Dernières livraisons</h2>
+            <a href="{{ orders_url }}" class="ozk-link">Tout voir</a>
+        </header>
+        {% if latest_orders %}
+            <div class="ozk-table-wrap">
+                <table class="ozk-table">
+                    <thead>
+                        <tr><th>Commande</th><th>Trajet</th><th>Client</th><th>Coursier</th><th>Statut</th><th class="ozk-num">Prix</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for o in latest_orders %}
+                            <tr>
+                                <td><a href="{{ o.url }}" class="ozk-ref">{{ o.ref }}</a><small>{{ o.when|date:"d/m · H:i" }}</small></td>
+                                <td>{{ o.route }}</td>
+                                <td>{{ o.client }}</td>
+                                <td>{% if o.courier %}{{ o.courier }}{% else %}<span class="ozk-muted">—</span>{% endif %}</td>
+                                <td>{% include "unfold/helpers/label.html" with text=o.status variant=o.status_variant %}</td>
+                                <td class="ozk-num">{{ o.price }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="ozk-empty">
+                <span class="material-symbols-outlined">inventory_2</span>
+                <p>Aucune livraison pour l'instant.</p>
+            </div>
+        {% endif %}
+    </article>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    var el = document.getElementById("ozk-map");
+    if (!el || !window.L) return;
+    var data = JSON.parse(el.dataset.map);
+    var map = L.map(el, { scrollWheelZoom: false, attributionControl: true })
+        .setView([data.center.lat, data.center.lng], 12);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        className: "ozk-tiles",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    // Noms et adresses saisis dans l'app : toujours échappés avant d'entrer dans le HTML
+    function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+    var bounds = [];
+    function dot(cls) { return L.divIcon({ className: "", html: '<i class="ozk-dot ozk-dot--lg ' + cls + '"></i>', iconSize: [16, 16] }); }
+    data.workers.forEach(function (w) {
+        L.marker([w.lat, w.lng], { icon: dot(w.busy ? "ozk-dot--busy" : "ozk-dot--online") })
+            .bindPopup("<strong>" + esc(w.name) + "</strong><br>" + esc(w.kind) + (w.busy ? " · en course" : " · disponible"))
+            .addTo(map);
+        bounds.push([w.lat, w.lng]);
+    });
+    data.orders.forEach(function (o) {
+        L.marker([o.lat, o.lng], { icon: dot("ozk-dot--order") })
+            .bindPopup('<a href="' + esc(o.url) + '">' + esc(o.label) + "</a>")
+            .addTo(map);
+        bounds.push([o.lat, o.lng]);
+    });
+    if (bounds.length > 1) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+});
+</script>
 {% endblock %}

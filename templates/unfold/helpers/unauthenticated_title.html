@@ -1,0 +1,10 @@
+{% load i18n static %}
+{# Surcharge Unfold : en-tête de la page de connexion avec le logo OzkExpress #}
+<div class="ozk-login-head">
+    <img src="{{ site_icon|default:'' }}" alt="" class="ozk-login-head__logo" onerror="this.remove()">
+    <h1>
+        {% if subtitle %}<span class="ozk-login-head__subtitle">{{ subtitle }}</span>{% endif %}
+        <span class="ozk-login-head__title"><b>Ozk</b>Express</span>
+    </h1>
+    <p class="ozk-login-head__hint">Back-office réservé à l’équipe. Connectez-vous avec votre numéro de téléphone.</p>
+</div>

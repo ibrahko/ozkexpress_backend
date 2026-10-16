@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1200" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#081233"/>
+      <stop offset=".6" stop-color="#0F1F4D"/>
+      <stop offset="1" stop-color="#1B2E6B"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".72" cy=".78" r=".55">
+      <stop offset="0" stop-color="#FBB61A" stop-opacity=".40"/>
+      <stop offset="1" stop-color="#FBB61A" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="streets" width="90" height="90" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)">
+      <path d="M0 0H90M0 0V90" stroke="#fff" stroke-opacity=".06" stroke-width="2"/>
+    </pattern>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <rect width="900" height="1200" fill="url(#sky)"/>
+  <rect width="900" height="1200" fill="url(#streets)"/>
+  <rect width="900" height="1200" fill="url(#glow)"/>
+
+  <!-- Le Niger, en filigrane -->
+  <path d="M-40 980 C 180 900, 320 1010, 520 940 S 820 860, 960 900" fill="none" stroke="#fff" stroke-opacity=".07" stroke-width="46" stroke-linecap="round"/>
+
+  <!-- Itinéraire de livraison -->
+  <path id="route" d="M190 820 C 260 700, 330 720, 390 610 S 520 470, 610 430 S 700 330, 720 250"
+        fill="none" stroke="#FBB61A" stroke-width="10" stroke-linecap="round" filter="url(#soft)" opacity=".8"/>
+  <path d="M190 820 C 260 700, 330 720, 390 610 S 520 470, 610 430 S 700 330, 720 250"
+        fill="none" stroke="#FFF1CC" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 14"/>
+
+  <!-- Point de départ -->
+  <circle cx="190" cy="820" r="26" fill="#FBB61A" fill-opacity=".25"/>
+  <circle cx="190" cy="820" r="11" fill="#fff"/>
+  <circle cx="190" cy="820" r="5" fill="#0F1F4D"/>
+
+  <!-- Coursier en route -->
+  <g transform="translate(470 520)">
+    <circle r="34" fill="#FBB61A" fill-opacity=".22"/>
+    <circle r="20" fill="#FBB61A" stroke="#fff" stroke-width="4"/>
+    <path d="M-7 3 L0 -7 L7 3" fill="none" stroke="#0F1F4D" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" transform="rotate(48)"/>
+  </g>
+
+  <!-- Destination -->
+  <g transform="translate(720 250)">
+    <path d="M0 18 C -26 -10, -26 -46, 0 -46 C 26 -46, 26 -10, 0 18 Z" fill="#FBB61A"/>
+    <circle cy="-26" r="9" fill="#0F1F4D"/>
+  </g>
+
+  <!-- Signature -->
+  <g transform="translate(450 1050)" text-anchor="middle" font-family="Inter, 'Segoe UI', Arial, sans-serif">
+    <text y="0" font-size="44" font-weight="800" letter-spacing="-.5"><tspan fill="#FBB61A">Ozk</tspan><tspan fill="#fff">Express</tspan></text>
+    <text y="44" fill="#FFF1CC" fill-opacity=".8" font-size="22" letter-spacing="3">VITE · FIABLE · PARTOUT</text>
+  </g>
+</svg>

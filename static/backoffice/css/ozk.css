@@ -1,0 +1,284 @@
+/*
+ * OzkExpress — feuille de style du back-office (au-dessus du thème Unfold).
+ * Couleurs : bleu marine = variables Unfold --color-primary-* (UNFOLD["COLORS"]),
+ * jaune ambré du logo = --ozk-yellow*. Le mode sombre suit la classe `dark` posée sur <html>.
+ */
+
+/* Couleurs du graphique (lues par Unfold sur <html>, donc définies à la racine) */
+:root { --ozk-chart-done: oklch(28.3% .100 266.7); --ozk-chart-open: #FBB61A; --ozk-chart-cancel: oklch(87.2% .01 258.338); }
+.dark { --ozk-chart-done: oklch(76% .085 266); --ozk-chart-cancel: oklch(44.6% .03 256.802); }
+
+.ozk {
+    --ozk-surface: #fff;
+    --ozk-border: var(--color-base-200);
+    --ozk-text: var(--color-base-900);
+    --ozk-muted: var(--color-base-500);
+    --ozk-soft: var(--color-base-50);
+    --ozk-radius: 14px;
+    --ozk-shadow: 0 1px 2px rgb(15 23 42 / .04), 0 4px 16px -4px rgb(15 23 42 / .06);
+    --ozk-success: oklch(62.7% .17 149.2);
+    --ozk-danger: oklch(57.7% .215 27.3);
+    --ozk-warning: oklch(68.1% .162 75.8);
+    --ozk-info: oklch(62.3% .188 259.8);
+    /* Jaune ambré du logo */
+    --ozk-yellow: #FBB61A;
+    --ozk-yellow-deep: #E9A000;
+    --ozk-yellow-soft: #FFF4D6;
+    --ozk-navy: #0F1F4D;
+
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    color: var(--ozk-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.dark .ozk {
+    --ozk-surface: var(--color-base-900);
+    --ozk-border: var(--color-base-800);
+    --ozk-text: var(--color-base-100);
+    --ozk-muted: var(--color-base-400);
+    --ozk-soft: rgb(255 255 255 / .03);
+    --ozk-shadow: none;
+}
+
+.ozk h1, .ozk h2 { margin: 0; color: inherit; }
+.ozk a { text-decoration: none; }
+.ozk small { display: block; color: var(--ozk-muted); font-size: 12px; font-weight: 400; margin-top: 2px; }
+.ozk-muted { color: var(--ozk-muted); }
+.ozk-num { text-align: right; white-space: nowrap; }
+
+/* ── Bandeau d'accueil ─────────────────────────────────────────────────── */
+.ozk-hero {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 28px 32px;
+    border-radius: 18px;
+    color: #fff;
+    background:
+        radial-gradient(90% 160% at 100% 100%, rgb(251 182 26 / .45) 0%, transparent 55%),
+        linear-gradient(135deg, #081233 0%, #0F1F4D 55%, #1B2E6B 100%);
+}
+.ozk-hero::after {
+    /* Rues en filigrane, comme l'écran de connexion */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgb(255 255 255 / .05) 2px, transparent 2px),
+        linear-gradient(90deg, rgb(255 255 255 / .05) 2px, transparent 2px);
+    background-size: 64px 64px;
+    transform: skewY(-8deg) scale(1.3);
+    pointer-events: none;
+}
+.ozk-hero > * { position: relative; z-index: 1; }
+.ozk-hero__date { margin: 0 0 6px; font-size: 13px; letter-spacing: .02em; color: var(--ozk-yellow); }
+.ozk-hero__title { font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -.02em; }
+.ozk-hero__subtitle { margin: 8px 0 0; font-size: 15px; color: rgb(255 255 255 / .82); }
+.ozk-hero__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.ozk-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff !important;
+    background: rgb(255 255 255 / .12);
+    border: 1px solid rgb(255 255 255 / .22);
+    backdrop-filter: blur(6px);
+    transition: background .15s ease, transform .15s ease;
+}
+.ozk-pill:hover { background: rgb(255 255 255 / .22); transform: translateY(-1px); }
+.ozk-pill .material-symbols-outlined { font-size: 18px; }
+
+/* ── Cartes ────────────────────────────────────────────────────────────── */
+.ozk-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 20px 22px;
+    background: var(--ozk-surface);
+    border: 1px solid var(--ozk-border);
+    border-radius: var(--ozk-radius);
+    box-shadow: var(--ozk-shadow);
+}
+.ozk-card--flush { padding: 0; overflow: hidden; }
+.ozk-card--flush > .ozk-card__head { padding: 18px 22px 14px; margin: 0; }
+.ozk-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.ozk-card__head h2 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+.ozk-link { font-size: 13px; font-weight: 600; color: var(--color-primary-600) !important; white-space: nowrap; }
+.ozk-link:hover { color: var(--color-primary-700) !important; }
+.dark .ozk-link { color: var(--color-primary-400) !important; }
+.ozk-count {
+    min-width: 24px; padding: 2px 8px; border-radius: 999px; text-align: center;
+    font-size: 12px; font-weight: 700; color: var(--ozk-navy); background: var(--ozk-yellow);
+}
+
+/* ── Indicateurs ───────────────────────────────────────────────────────── */
+.ozk-kpis { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ozk-kpi { gap: 6px; position: relative; overflow: hidden; }
+.ozk-kpi__head { display: flex; align-items: center; justify-content: space-between; }
+.ozk-kpi__label { font-size: 13px; font-weight: 500; color: var(--ozk-muted); }
+.ozk-icon-chip {
+    display: grid; place-items: center;
+    width: 36px; height: 36px; border-radius: 10px;
+    font-size: 20px !important;
+    color: var(--ozk-navy);
+    background: var(--ozk-yellow-soft);
+}
+.dark .ozk-icon-chip { color: var(--ozk-yellow); background: rgb(251 182 26 / .12); }
+.ozk-kpi__value { font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; white-space: nowrap; }
+.ozk-kpi__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; }
+.ozk-kpi__sub { color: var(--ozk-muted); }
+.ozk-kpi--alert { border-color: var(--ozk-yellow); box-shadow: 0 0 0 3px rgb(251 182 26 / .15); }
+.ozk-kpi--alert .ozk-kpi__sub { color: #9a6700; font-weight: 600; }
+.dark .ozk-kpi--alert .ozk-kpi__sub { color: var(--ozk-yellow); }
+.ozk-trend { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+.ozk-trend--up { color: var(--ozk-success); background: color-mix(in oklch, var(--ozk-success) 12%, transparent); }
+.ozk-trend--down { color: var(--ozk-danger); background: color-mix(in oklch, var(--ozk-danger) 12%, transparent); }
+.ozk-trend--flat { color: var(--ozk-muted); background: var(--ozk-soft); }
+.ozk-spark {
+    position: absolute; right: 16px; bottom: 14px;
+    width: 96px; height: 32px; overflow: visible;
+}
+.ozk-spark polyline {
+    fill: none; stroke: var(--ozk-yellow-deep); stroke-width: 2.25;
+    stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke;
+}
+
+/* ── Grilles ───────────────────────────────────────────────────────────── */
+.ozk-grid { display: grid; gap: 16px; }
+.ozk-grid--2-1 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.ozk-chart { flex: 1; min-height: 280px; }
+
+/* ── À traiter ─────────────────────────────────────────────────────────── */
+.ozk-todo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ozk-todo__item {
+    --level: var(--ozk-muted);
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 10px;
+    color: var(--ozk-text) !important;
+    transition: background .15s ease;
+}
+.ozk-todo__item:hover { background: var(--ozk-soft); }
+.ozk-todo__item--danger { --level: var(--ozk-danger); }
+.ozk-todo__item--warning { --level: var(--ozk-warning); }
+.ozk-todo__item--info { --level: var(--ozk-info); }
+.ozk-todo__item--done { --level: var(--ozk-success); opacity: .6; }
+.ozk-todo__icon {
+    display: grid; place-items: center; flex: none;
+    width: 32px; height: 32px; border-radius: 9px; font-size: 18px !important;
+    color: var(--level);
+    background: color-mix(in oklch, var(--level) 13%, transparent);
+}
+.ozk-todo__label { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; line-height: 1.3; }
+.ozk-todo__count { font-size: 15px; font-weight: 700; color: var(--level); }
+.ozk-todo__item--done .ozk-todo__count { color: var(--ozk-muted); font-weight: 500; }
+
+/* ── Carte en direct ───────────────────────────────────────────────────── */
+.ozk-map { height: 340px; flex: 1; border-top: 1px solid var(--ozk-border); z-index: 0; }
+.ozk-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ozk-muted); }
+.ozk-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ozk-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgb(15 23 42 / .15); }
+.ozk-dot--lg { width: 16px; height: 16px; border-width: 3px; box-shadow: 0 2px 6px rgb(15 23 42 / .35); }
+.ozk-dot--online { background: var(--ozk-success); }
+.ozk-dot--busy { background: var(--ozk-yellow); }
+.ozk-dot--order { background: var(--ozk-navy); border-radius: 4px; }
+/* Fond de carte OpenStreetMap adouci, et assombri en mode sombre */
+.ozk-tiles { filter: saturate(.55) contrast(.95); }
+.dark .ozk-tiles { filter: invert(1) hue-rotate(180deg) brightness(.85) saturate(.4); }
+.ozk-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.ozk-swatch--done { background: var(--ozk-chart-done); }
+.ozk-swatch--open { background: var(--ozk-chart-open); }
+.ozk-swatch--cancel { background: var(--ozk-chart-cancel); }
+.leaflet-popup-content { font-family: Inter, system-ui, sans-serif; font-size: 13px; }
+.leaflet-popup-content a { color: var(--color-primary-600); font-weight: 600; }
+
+/* ── Classement ────────────────────────────────────────────────────────── */
+.ozk-top { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ozk-top a { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 10px; color: var(--ozk-text) !important; }
+.ozk-top a:hover { background: var(--ozk-soft); }
+.ozk-rank { width: 16px; font-size: 12px; font-weight: 700; color: var(--ozk-muted); text-align: center; }
+.ozk-top li:first-child .ozk-rank { color: var(--ozk-yellow-deep); }
+.ozk-avatar {
+    display: grid; place-items: center; flex: none;
+    width: 36px; height: 36px; border-radius: 50%;
+    font-size: 13px; font-weight: 700; color: var(--ozk-navy);
+    background: linear-gradient(135deg, #FFE7A6, var(--ozk-yellow));
+}
+.dark .ozk-avatar { color: var(--ozk-yellow); background: rgb(251 182 26 / .16); }
+.ozk-top__name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+.ozk-top__amount { font-size: 13px; font-weight: 700; white-space: nowrap; }
+
+/* ── Tableau ───────────────────────────────────────────────────────────── */
+.ozk-table-wrap { overflow-x: auto; border-top: 1px solid var(--ozk-border); }
+.ozk-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ozk-table th {
+    padding: 10px 22px; text-align: left; white-space: nowrap;
+    font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--ozk-muted); background: var(--ozk-soft);
+}
+.ozk-table td { padding: 12px 22px; border-top: 1px solid var(--ozk-border); vertical-align: middle; }
+.ozk-table tbody tr { transition: background .12s ease; }
+.ozk-table tbody tr:hover { background: var(--ozk-soft); }
+.ozk-ref { font-weight: 650; color: var(--ozk-text) !important; }
+.ozk-ref:hover { color: var(--color-primary-600) !important; }
+
+/* ── États vides ───────────────────────────────────────────────────────── */
+.ozk-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; flex: 1; padding: 28px 16px; text-align: center; color: var(--ozk-muted); }
+.ozk-empty .material-symbols-outlined { font-size: 34px; color: var(--ozk-yellow); }
+.ozk-empty p { margin: 0; max-width: 260px; font-size: 13px; }
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+@media (max-width: 1279px) {
+    .ozk-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 1023px) {
+    .ozk-grid--2-1 { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 639px) {
+    .ozk { gap: 16px; }
+    .ozk-kpis { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .ozk-hero { padding: 22px 20px; border-radius: 14px; }
+    .ozk-hero__title { font-size: 23px; }
+    .ozk-kpi__value { font-size: 26px; }
+    .ozk-table th, .ozk-table td { padding-left: 14px; padding-right: 14px; }
+}
+
+/* ── Page de connexion ─────────────────────────────────────────────────── */
+body.login #page > .bg-cover {
+    /* Illustration : centrée et sur la moitié de l'écran */
+    flex: 0 0 48%;
+    max-width: none;
+    background-position: center;
+    background-color: #0F1F4D;
+}
+.ozk-login-head { margin-bottom: 32px; }
+.ozk-login-head__logo {
+    width: 56px; height: 56px; margin-bottom: 20px;
+    border-radius: 14px; object-fit: contain;
+    box-shadow: 0 8px 24px -8px rgb(15 31 77 / .45);
+}
+.ozk-login-head h1 { margin: 0; font-weight: 700; }
+.ozk-login-head__subtitle { display: block; font-size: 14px; font-weight: 500; color: var(--color-base-500); }
+.ozk-login-head__title {
+    display: block; margin-top: 2px;
+    font-size: 30px; letter-spacing: -.03em; color: #0F1F4D;
+}
+.ozk-login-head__title b { color: #E9A000; font-weight: 800; }
+.dark .ozk-login-head__title { color: #fff; }
+.dark .ozk-login-head__title b { color: #FBB61A; }
+.ozk-login-head__hint { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: var(--color-base-500); }

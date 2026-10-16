@@ -246,6 +246,8 @@ MEDIA_ROOT = BASE_DIR / "media"
 LANGUAGE_CODE = "fr-fr"
 TIME_ZONE = "UTC"
 USE_I18N = True
+# Traductions propres au projet (ex. textes du thème Unfold, voir compile_backoffice_locale)
+LOCALE_PATHS = [BASE_DIR / "locale"]
 USE_TZ = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -316,7 +318,16 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 # ─── Back-office (django-unfold) ─────────────────────────────────────────────
+from django.templatetags.static import static  # noqa: E402
 from django.urls import reverse_lazy  # noqa: E402
+
+
+# Logo officiel s'il a été déposé dans static/backoffice/img/logo.png, sinon le monogramme SVG
+_BRAND_ICON = (
+    "backoffice/img/logo.png"
+    if (BASE_DIR / "static" / "backoffice" / "img" / "logo.png").exists()
+    else "backoffice/img/mark.svg"
+)
 
 
 def _nav(title, icon, url_name):
@@ -327,24 +338,31 @@ UNFOLD = {
     "SITE_TITLE": "OzkExpress",
     "SITE_HEADER": "OzkExpress",
     "SITE_SUBHEADER": "Back-office",
-    "SITE_SYMBOL": "two_wheeler",
+    "SITE_ICON": lambda request: static(_BRAND_ICON),
+    "SITE_FAVICONS": [
+        {"rel": "icon", "href": lambda request: static(_BRAND_ICON)},
+    ],
+    "ENVIRONMENT": "apps.backoffice.dashboard.environment_callback",
+    "STYLES": [lambda request: static("backoffice/css/ozk.css")],
+    "LOGIN": {"image": lambda request: static("backoffice/img/login.svg")},
     "SITE_URL": None,
     "SHOW_VIEW_ON_SITE": False,
     "DASHBOARD_CALLBACK": "apps.backoffice.dashboard.dashboard_callback",
     "COLORS": {
-        # Orange OzkExpress (palette Tailwind « orange »)
+        # Bleu marine du logo OzkExpress (900 = #0F1F4D) : boutons, liens, menu actif.
+        # Le jaune ambré du logo (#FBB61A) sert d'accent dans static/backoffice/css/ozk.css.
         "primary": {
-            "50": "oklch(98% .016 73.684)",
-            "100": "oklch(95.4% .038 75.164)",
-            "200": "oklch(90.1% .076 70.697)",
-            "300": "oklch(83.7% .128 66.29)",
-            "400": "oklch(75% .183 55.934)",
-            "500": "oklch(70.5% .213 47.604)",
-            "600": "oklch(64.6% .222 41.116)",
-            "700": "oklch(55.3% .195 38.402)",
-            "800": "oklch(47% .157 37.304)",
-            "900": "oklch(40.8% .123 38.172)",
-            "950": "oklch(26.6% .079 36.259)",
+            "50": "oklch(97% .012 266)",
+            "100": "oklch(93.5% .025 266)",
+            "200": "oklch(87% .050 266)",
+            "300": "oklch(76% .085 266)",
+            "400": "oklch(62% .120 266)",
+            "500": "oklch(50% .140 266)",
+            "600": "oklch(41% .130 266)",
+            "700": "oklch(34% .115 266)",
+            "800": "oklch(28.3% .100 266.7)",
+            "900": "oklch(25.7% .088 265.9)",
+            "950": "oklch(19% .065 266)",
         },
     },
     "SIDEBAR": {

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OzkExpress">
+  <!-- Monogramme provisoire aux couleurs du logo (jaune ambré + bleu marine).
+       Remplacé automatiquement par static/backoffice/img/logo.png s'il existe. -->
+  <rect width="64" height="64" rx="16" fill="#FBB61A"/>
+  <ellipse cx="33" cy="30" rx="13" ry="16" fill="none" stroke="#0F1F4D" stroke-width="7"/>
+  <path d="M12 46 C 24 34, 38 27, 52 24" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M46 19 L55 23.5 L48 30.5" fill="none" stroke="#0F1F4D" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
