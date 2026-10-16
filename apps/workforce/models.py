@@ -1,6 +1,15 @@
 from django.db import models
 from django.contrib.gis.db import models as gis_models
+from core.exceptions import BusinessLogicError
 from core.models import BaseModel
+
+
+class WorkerSuspended(BusinessLogicError):
+    status_code = 403
+    default_code = "worker_suspended"
+
+    def __init__(self):
+        super().__init__("Votre compte est suspendu. Contactez le support OzkExpress.")
 
 
 class WorkerStatus(models.TextChoices):
@@ -101,24 +110,48 @@ class BaseWorker(BaseModel):
             models.Index(fields=["status", "is_available"]),
         ]
 
-    def go_online(self):
-        self.status = WorkerStatus.ONLINE
-        self.is_available = True
+    # Le champ `status` sert à la fois à la validation (pending/suspended) et à la
+    # présence (online/offline/busy). Une suspension décidée au back-office ne doit
+    # jamais être écrasée par un changement de présence.
+
+    @property
+    def is_suspended(self):
+        return self.status == WorkerStatus.SUSPENDED
+
+    def ensure_can_work(self):
+        if self.is_suspended:
+            raise WorkerSuspended()
+
+    def _set_presence(self, status, available):
+        if self.is_suspended:
+            status, available = WorkerStatus.SUSPENDED, False
+        self.status = status
+        self.is_available = available
         self.save(update_fields=["status", "is_available", "updated_at"])
 
+    def go_online(self):
+        self.ensure_can_work()
+        self._set_presence(WorkerStatus.ONLINE, True)
+
     def go_offline(self):
+        self._set_presence(WorkerStatus.OFFLINE, False)
+
+    def set_busy(self):
+        self._set_presence(WorkerStatus.BUSY, False)
+
+    def set_available(self):
+        self._set_presence(WorkerStatus.ONLINE, True)
+
+    # ── Décisions du back-office ──
+    def approve(self):
+        """Valide le compte : le travailleur peut se mettre en ligne."""
         self.status = WorkerStatus.OFFLINE
         self.is_available = False
         self.save(update_fields=["status", "is_available", "updated_at"])
 
-    def set_busy(self):
-        self.status = WorkerStatus.BUSY
+    def suspend(self):
+        self.status = WorkerStatus.SUSPENDED
         self.is_available = False
-        self.save(update_fields=["status", "is_available", "updated_at"])
-
-    def set_available(self):
-        self.status = WorkerStatus.ONLINE
-        self.is_available = True
         self.save(update_fields=["status", "is_available", "updated_at"])
 
     def update_location(self, latitude: float, longitude: float):
@@ -144,7 +177,8 @@ class WorkerDocument(BaseModel):
         "contenttypes.ContentType", on_delete=models.CASCADE
     )
     object_id = models.UUIDField()
-    # content_object défini dans chaque sous-classe via GenericRelation
+    # Coursier ou chauffeur propriétaire (côté inverse : GenericRelation `documents`)
+    content_object = GenericForeignKey("content_type", "object_id")
 
     doc_type = models.CharField(max_length=30, choices=DocumentType.choices)
     file = models.FileField(upload_to="worker_documents/")

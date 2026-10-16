@@ -252,6 +252,7 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
                 {"detail": "Profil coursier introuvable. Contactez le support."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        courier.ensure_can_work()
         # Attribution directe : réservée au coursier choisi
         if req.preferred_courier_id and req.preferred_courier_id != courier.id:
             return Response(
@@ -355,6 +356,7 @@ class RideRequestViewSet(viewsets.ModelViewSet):
                 {"detail": "Profil chauffeur introuvable. Contactez le support."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        driver.ensure_can_work()
         ride.accept(driver)
         return Response(self.get_serializer(ride).data)
 

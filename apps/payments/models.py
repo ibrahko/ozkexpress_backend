@@ -179,3 +179,34 @@ class WithdrawalRequest(BaseModel):
         verbose_name = "Demande de retrait"
         verbose_name_plural = "Demandes de retrait"
         ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Retrait {self.amount} F — {self.wallet.user.get_full_name() or self.wallet.user.phone}"
+
+    # Décisions du back-office. Chaque transition est conditionnée au statut
+    # attendu : un double clic ne peut pas débiter deux fois le portefeuille.
+
+    def _move(self, expected, new_status, note=""):
+        updated = WithdrawalRequest.objects.filter(pk=self.pk, status=expected).update(
+            status=new_status,
+            processed_at=timezone.now(),
+            admin_note=note or self.admin_note,
+            updated_at=timezone.now(),
+        )
+        if not updated:
+            raise ValueError(f"Demande déjà traitée (statut : {self.get_status_display()}).")
+        self.refresh_from_db()
+
+    def approve(self, note=""):
+        """Débite le portefeuille. Refusé si le solde est insuffisant."""
+        from django.db import transaction
+        with transaction.atomic():
+            self._move(self.WithdrawalStatus.PENDING, self.WithdrawalStatus.APPROVED, note)
+            self.wallet.debit(self.amount)  # lève ValueError → annule l'approbation
+
+    def reject(self, note=""):
+        self._move(self.WithdrawalStatus.PENDING, self.WithdrawalStatus.REJECTED, note)
+
+    def mark_paid(self, note=""):
+        """L'argent a été envoyé au travailleur (Orange Money, Wave…)."""
+        self._move(self.WithdrawalStatus.APPROVED, self.WithdrawalStatus.PAID, note)
