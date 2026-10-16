@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status, filters, generics
+from rest_framework import filters, generics, mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -52,7 +52,18 @@ ESCALATION_WIDEN_KM = 10
 ESCALATION_OPEN_S = 180
 
 
-class ServiceRequestViewSet(viewsets.ModelViewSet):
+class CreateListRetrieveViewSet(
+    mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet,
+):
+    """
+    Commandes : création et lecture seulement. Toute modification passe par les
+    actions dédiées (accept, pickup, deliver, cancel…) qui respectent la machine
+    à états. PUT/PATCH/DELETE ouverts permettaient à un coursier de modifier ou
+    supprimer une commande en attente, et à un client d'effacer son historique.
+    """
+
+
+class ServiceRequestViewSet(CreateListRetrieveViewSet):
     """
     Demandes de livraison de colis.
     - Client : crée, consulte, annule, note
@@ -300,7 +311,7 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
             worker.save(update_fields=["rating"])
 
 
-class RideRequestViewSet(viewsets.ModelViewSet):
+class RideRequestViewSet(CreateListRetrieveViewSet):
     """
     Demandes de course / transport de personnes.
     - Client : crée, consulte, annule, note

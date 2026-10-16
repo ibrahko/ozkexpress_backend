@@ -22,7 +22,12 @@ class CourierSerializer(serializers.ModelSerializer):
             "delivery_zone_radius_km", "service_area",
             "rating", "total_trips", "is_available", "last_location_update",
         ]
-        read_only_fields = ["id", "rating", "total_trips", "last_location_update"]
+        # Statut et disponibilité : changés uniquement par go_online/go_offline,
+        # le cycle des commandes et le back-office (validation, suspension).
+        # Modifiables ici, ils permettaient de lever soi-même une suspension.
+        read_only_fields = [
+            "id", "status", "is_available", "rating", "total_trips", "last_location_update",
+        ]
 
 
 class CourierEarningSerializer(serializers.ModelSerializer):
@@ -32,7 +37,8 @@ class CourierEarningSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class CourierViewSet(viewsets.ModelViewSet):
+class CourierViewSet(viewsets.ReadOnlyModelViewSet):
+    """Lecture seule : la fiche se modifie via `me` (PATCH), jamais créée ni supprimée ici."""
     permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
