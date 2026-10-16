@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.gis.db import models as gis_models
+from core.exceptions import BusinessLogicError
 from core.models import BaseModel
 
 
@@ -34,6 +35,47 @@ class PaymentMethod(models.TextChoices):
     MTN_MOMO = "mtn_momo", "MTN MoMo"
     WAVE = "wave", "Wave"
     STRIPE = "stripe", "Carte bancaire"
+
+
+class InvalidTransition(BusinessLogicError):
+    """Changement de statut interdit (ou déjà effectué par quelqu'un d'autre)."""
+    status_code = 409
+    default_code = "invalid_transition"
+
+
+# Machines à états : statut courant → statuts atteignables
+DELIVERY_TRANSITIONS = {
+    RequestStatus.PENDING: {RequestStatus.ACCEPTED, RequestStatus.CANCELLED},
+    RequestStatus.ACCEPTED: {RequestStatus.PICKUP, RequestStatus.CANCELLED},
+    RequestStatus.PICKUP: {RequestStatus.IN_PROGRESS, RequestStatus.CANCELLED},
+    RequestStatus.IN_PROGRESS: {RequestStatus.DELIVERED, RequestStatus.FAILED},
+}
+
+
+def _transition(instance, transitions, new_status, **fields):
+    """
+    Passe `instance` à `new_status` si la machine à états l'autorise.
+    L'UPDATE est conditionné au statut lu (compare-and-set) : si une autre
+    requête a modifié la commande entre-temps (deux coursiers qui acceptent
+    en même temps, double appui sur « Livré »…), aucune ligne n'est mise à
+    jour et InvalidTransition est levée — pas de verrou ni de double gain.
+    """
+    from django.utils import timezone
+
+    current = instance.status
+    if new_status not in transitions.get(current, set()):
+        raise InvalidTransition(
+            f"Transition impossible : {current} → {new_status}."
+        )
+    fields["updated_at"] = timezone.now()
+    updated = type(instance).objects.filter(pk=instance.pk, status=current).update(
+        status=new_status, **fields
+    )
+    if not updated:
+        raise InvalidTransition("Cette commande a été modifiée entre-temps.")
+    instance.status = new_status
+    for name, value in fields.items():
+        setattr(instance, name, value)
 
 
 class ServiceRequest(BaseModel):
@@ -144,45 +186,50 @@ class ServiceRequest(BaseModel):
         return f"Livraison #{str(self.id)[:8]} - {self.get_status_display()}"
 
     def accept(self, courier):
+        """Atomique : si deux coursiers acceptent en même temps, un seul gagne."""
         from django.utils import timezone
-        self.courier = courier
-        self.status = RequestStatus.ACCEPTED
-        self.accepted_at = timezone.now()
-        self.save(update_fields=["courier", "status", "accepted_at", "updated_at"])
+        _transition(
+            self, DELIVERY_TRANSITIONS, RequestStatus.ACCEPTED,
+            courier=courier, accepted_at=timezone.now(),
+        )
         courier.set_busy()
 
     def mark_pickup(self):
-        self.status = RequestStatus.PICKUP
-        self.save(update_fields=["status", "updated_at"])
+        _transition(self, DELIVERY_TRANSITIONS, RequestStatus.PICKUP)
 
     def mark_in_progress(self):
         from django.utils import timezone
-        self.status = RequestStatus.IN_PROGRESS
-        self.picked_up_at = timezone.now()
-        self.save(update_fields=["status", "picked_up_at", "updated_at"])
+        _transition(
+            self, DELIVERY_TRANSITIONS, RequestStatus.IN_PROGRESS,
+            picked_up_at=timezone.now(),
+        )
 
     def mark_delivered(self):
+        from django.db import transaction
         from django.utils import timezone
-        self.status = RequestStatus.DELIVERED
-        self.delivered_at = timezone.now()
         # P4 : figer le prix final (à défaut, le prix estimé)
-        if self.final_price is None and self.estimated_price is not None:
-            self.final_price = self.estimated_price
-        self.save(update_fields=["status", "delivered_at", "final_price", "updated_at"])
-        if self.courier:
-            self.courier.set_available()
-            self.courier.total_trips = models.F("total_trips") + 1
-            self.courier.save(update_fields=["total_trips"])
-            self._create_courier_earning()
+        final_price = self.final_price if self.final_price is not None else self.estimated_price
+        with transaction.atomic():
+            _transition(
+                self, DELIVERY_TRANSITIONS, RequestStatus.DELIVERED,
+                delivered_at=timezone.now(), final_price=final_price,
+            )
+            if self.courier:
+                self.courier.set_available()
+                self.courier.total_trips = models.F("total_trips") + 1
+                self.courier.save(update_fields=["total_trips"])
+                self._create_courier_earning()
 
     def _create_courier_earning(self):
         """
         P4 : gain du coursier = prix − commission entreprise.
         Commission = frais de service (400 F) de jour ; la nuit, la majoration
         est en plus répartie 85 % coursier / 15 % entreprise (split_night_surcharge).
+        Le portefeuille du coursier est mis à jour dans la foulée (voir Wallet.apply_earning).
         """
         from decimal import Decimal
         from apps.couriers.models import CourierEarning
+        from apps.payments.models import Wallet
         from .pricing import split_night_surcharge
 
         if self.final_price is None or self.courier is None:
@@ -202,14 +249,19 @@ class ServiceRequest(BaseModel):
             commission_amount=commission,
             net_amount=gross - commission,
         )
+        Wallet.apply_earning(
+            self.courier.user,
+            net=gross - commission,
+            commission=commission,
+            paid_in_cash=self.payment_method == PaymentMethod.CASH,
+        )
 
     def cancel(self, reason: str = CancellationReason.OTHER, note: str = ""):
         from django.utils import timezone
-        self.status = RequestStatus.CANCELLED
-        self.cancellation_reason = reason
-        self.cancellation_note = note
-        self.cancelled_at = timezone.now()
-        self.save(update_fields=["status", "cancellation_reason", "cancellation_note", "cancelled_at", "updated_at"])
+        _transition(
+            self, DELIVERY_TRANSITIONS, RequestStatus.CANCELLED,
+            cancellation_reason=reason, cancellation_note=note, cancelled_at=timezone.now(),
+        )
         if self.courier:
             self.courier.set_available()
 
@@ -221,6 +273,14 @@ class RideStatus(models.TextChoices):
     IN_PROGRESS = "in_progress", "Course en cours"
     COMPLETED = "completed", "Terminée"
     CANCELLED = "cancelled", "Annulée"
+
+
+RIDE_TRANSITIONS = {
+    RideStatus.PENDING: {RideStatus.ACCEPTED, RideStatus.CANCELLED},
+    RideStatus.ACCEPTED: {RideStatus.DRIVER_ARRIVING, RideStatus.IN_PROGRESS, RideStatus.CANCELLED},
+    RideStatus.DRIVER_ARRIVING: {RideStatus.IN_PROGRESS, RideStatus.CANCELLED},
+    RideStatus.IN_PROGRESS: {RideStatus.COMPLETED},
+}
 
 
 class RideRequest(BaseModel):
@@ -314,32 +374,38 @@ class RideRequest(BaseModel):
         return f"Course #{str(self.id)[:8]} - {self.get_status_display()}"
 
     def accept(self, driver):
+        """Atomique : si deux chauffeurs acceptent en même temps, un seul gagne."""
         from django.utils import timezone
-        self.driver = driver
-        self.status = RideStatus.ACCEPTED
-        self.accepted_at = timezone.now()
-        self.save(update_fields=["driver", "status", "accepted_at", "updated_at"])
+        _transition(
+            self, RIDE_TRANSITIONS, RideStatus.ACCEPTED,
+            driver=driver, accepted_at=timezone.now(),
+        )
         driver.set_busy()
 
     def start(self):
         from django.utils import timezone
-        self.status = RideStatus.IN_PROGRESS
-        self.started_at = timezone.now()
-        self.save(update_fields=["status", "started_at", "updated_at"])
+        _transition(self, RIDE_TRANSITIONS, RideStatus.IN_PROGRESS, started_at=timezone.now())
 
     def complete(self):
+        from django.db import transaction
         from django.utils import timezone
-        self.status = RideStatus.COMPLETED
-        self.completed_at = timezone.now()
         # Figer le prix final (à défaut, le prix estimé) — aligné sur les livraisons
-        if self.final_price is None and self.estimated_price is not None:
-            self.final_price = self.estimated_price
-        self.save(update_fields=["status", "completed_at", "final_price", "updated_at"])
+        final_price = self.final_price if self.final_price is not None else self.estimated_price
+        with transaction.atomic():
+            _transition(
+                self, RIDE_TRANSITIONS, RideStatus.COMPLETED,
+                completed_at=timezone.now(), final_price=final_price,
+            )
+            if self.driver:
+                self.driver.set_available()
+                self.driver.total_trips = models.F("total_trips") + 1
+                self.driver.save(update_fields=["total_trips"])
+                self._create_driver_earning()
+
+    def cancel(self):
+        _transition(self, RIDE_TRANSITIONS, RideStatus.CANCELLED)
         if self.driver:
             self.driver.set_available()
-            self.driver.total_trips = models.F("total_trips") + 1
-            self.driver.save(update_fields=["total_trips"])
-            self._create_driver_earning()
 
     def _create_driver_earning(self):
         """
@@ -349,6 +415,7 @@ class RideRequest(BaseModel):
         """
         from decimal import Decimal
         from apps.drivers.models import DriverEarning
+        from apps.payments.models import Wallet
         from .pricing import split_night_surcharge
 
         if self.final_price is None or self.driver is None:
@@ -368,6 +435,8 @@ class RideRequest(BaseModel):
             commission_amount=commission,
             net_amount=gross - commission,
         )
+        # Les courses n'ont pas encore de moyen de paiement : le client paie le chauffeur en espèces
+        Wallet.apply_earning(self.driver.user, net=gross - commission, commission=commission, paid_in_cash=True)
 
 
 class Zone(BaseModel):

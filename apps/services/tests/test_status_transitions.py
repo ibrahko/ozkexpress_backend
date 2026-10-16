@@ -27,6 +27,7 @@ def make_courier(phone="+22371000001", plate="AB-1234-MD"):
         vehicle_model="YBR 125",
         vehicle_plate=plate,
         chassis_number=f"CH-{plate}",
+        license_number=f"LIC-{plate}",
     )
 
 
@@ -38,6 +39,7 @@ def make_driver(phone="+22372000001", plate="CD-5678-MD"):
         vehicle_model="CB 150",
         vehicle_plate=plate,
         chassis_number=f"CH-{plate}",
+        license_number=f"LIC-{plate}",
     )
 
 
@@ -85,6 +87,8 @@ class DeliveryTransitionTests(TestCase):
 
     def test_gain_coursier_cree_et_idempotent(self):
         self.request.accept(self.courier)
+        self.request.mark_pickup()
+        self.request.mark_in_progress()
         self.request.mark_delivered()
 
         earnings = CourierEarning.objects.filter(service_request=self.request)
@@ -138,6 +142,7 @@ class RideTransitionTests(TestCase):
 
     def test_gain_chauffeur_cree_et_idempotent(self):
         self.ride.accept(self.driver)
+        self.ride.start()
         self.ride.complete()
 
         earnings = DriverEarning.objects.filter(ride_request=self.ride)

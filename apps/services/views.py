@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status, filters, generics
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -263,23 +264,30 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[IsCourier])
     def pickup(self, request, pk=None):
         """POST /api/v1/services/{id}/pickup/ — coursier en route vers départ."""
-        req = self.get_object()
+        req = self._get_assigned(request)
         req.mark_pickup()
         return Response({"detail": "Statut mis à jour: en route vers le départ."})
 
     @action(detail=True, methods=["post"], permission_classes=[IsCourier])
     def start(self, request, pk=None):
         """POST /api/v1/services/{id}/start/ — colis récupéré, en livraison."""
-        req = self.get_object()
+        req = self._get_assigned(request)
         req.mark_in_progress()
         return Response({"detail": "Livraison en cours."})
 
     @action(detail=True, methods=["post"], permission_classes=[IsCourier])
     def deliver(self, request, pk=None):
         """POST /api/v1/services/{id}/deliver/ — livraison terminée."""
-        req = self.get_object()
+        req = self._get_assigned(request)
         req.mark_delivered()
         return Response({"detail": "Livraison effectuée avec succès."})
+
+    def _get_assigned(self, request):
+        """Commande dont l'utilisateur est le coursier assigné (sinon 403)."""
+        req = self.get_object()
+        if req.courier is None or req.courier.user_id != request.user.id:
+            raise PermissionDenied("Cette livraison ne vous est pas assignée.")
+        return req
 
     def _update_worker_rating(self, worker):
         from django.db.models import Avg
@@ -323,6 +331,13 @@ class RideRequestViewSet(viewsets.ModelViewSet):
             return [IsClient()]
         return [IsAuthenticated()]
 
+    def _get_assigned(self, request):
+        """Course dont l'utilisateur est le chauffeur assigné (sinon 403)."""
+        ride = self.get_object()
+        if ride.driver is None or ride.driver.user_id != request.user.id:
+            raise PermissionDenied("Cette course ne vous est pas assignée.")
+        return ride
+
     @action(detail=False, methods=["get"], permission_classes=[IsDriver])
     def available(self, request):
         qs = RideRequest.objects.filter(status=RideStatus.PENDING).select_related("client")
@@ -345,13 +360,13 @@ class RideRequestViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], permission_classes=[IsDriver])
     def start(self, request, pk=None):
-        ride = self.get_object()
+        ride = self._get_assigned(request)
         ride.start()
         return Response({"detail": "Course démarrée."})
 
     @action(detail=True, methods=["post"], permission_classes=[IsDriver])
     def complete(self, request, pk=None):
-        ride = self.get_object()
+        ride = self._get_assigned(request)
         ride.complete()
         return Response({"detail": "Course terminée."})
 
@@ -362,10 +377,7 @@ class RideRequestViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Non autorisé."}, status=status.HTTP_403_FORBIDDEN)
         if ride.status not in (RideStatus.PENDING, RideStatus.ACCEPTED):
             return Response({"detail": "Impossible d'annuler."}, status=status.HTTP_400_BAD_REQUEST)
-        ride.status = RideStatus.CANCELLED
-        ride.save(update_fields=["status"])
-        if ride.driver:
-            ride.driver.set_available()
+        ride.cancel()
         return Response({"detail": "Course annulée."})
 
     @action(detail=True, methods=["post"], permission_classes=[IsClient])
