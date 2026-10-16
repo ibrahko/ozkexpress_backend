@@ -1,0 +1,49 @@
+{% extends 'admin/base.html' %}
+{% load i18n unfold %}
+
+{% block title %}Tableau de bord | {{ site_title }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+    {# Indicateurs du jour #}
+    <div class="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2 xl:grid-cols-4">
+        {% for kpi in kpis %}
+            {% component "unfold/components/card.html" with icon=kpi.icon footer=kpi.footer %}
+                {% component "unfold/components/text.html" %}{{ kpi.title }}{% endcomponent %}
+                {% component "unfold/components/title.html" %}{{ kpi.value }}{% endcomponent %}
+            {% endcomponent %}
+        {% endfor %}
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 mb-8 lg:grid-cols-3">
+        {# À traiter #}
+        {% component "unfold/components/card.html" with title="À traiter" %}
+            <div class="flex flex-col gap-4">
+                {% for item in todo %}
+                    <a href="{{ item.url }}" class="flex items-center justify-between gap-4">
+                        <span class="text-sm">{{ item.label }}{% if item.detail and item.count %} <span class="text-xs text-font-subtle-light">({{ item.detail }})</span>{% endif %}</span>
+                        {% if item.count %}
+                            {% component "unfold/helpers/label.html" with variant="warning" text=item.count %}{% endcomponent %}
+                        {% else %}
+                            {% component "unfold/helpers/label.html" with variant="success" text="0" %}{% endcomponent %}
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% endcomponent %}
+
+        {# Activité des derniers jours #}
+        {% component "unfold/components/card.html" with title=chart_title class="lg:col-span-2" %}
+            {% component "unfold/components/chart/bar.html" with data=chart_data height=260 %}{% endcomponent %}
+        {% endcomponent %}
+    </div>
+
+    {# Dernières commandes #}
+    {% component "unfold/components/card.html" with title="Dernières livraisons" %}
+        {% component "unfold/components/table.html" with table=latest_orders card_included=1 striped=1 %}{% endcomponent %}
+        <div class="mt-1 text-sm"><a href="{{ orders_url }}" class="text-primary-600">Voir toutes les livraisons →</a></div>
+    {% endcomponent %}
+{% endblock %}

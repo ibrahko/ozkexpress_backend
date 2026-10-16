@@ -26,6 +26,9 @@ DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 DJANGO_APPS = [
+    # Back-office : le thème Unfold doit précéder django.contrib.admin
+    "unfold",
+    "unfold.contrib.filters",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -63,6 +66,7 @@ LOCAL_APPS = [
     "apps.disputes",
     "apps.notifications",
     "apps.analytics",
+    "apps.backoffice",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -70,6 +74,8 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Sert /static/ en production (CSS/JS du back-office) sans serveur web dédié
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -307,3 +313,92 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+
+# ─── Back-office (django-unfold) ─────────────────────────────────────────────
+from django.urls import reverse_lazy  # noqa: E402
+
+
+def _nav(title, icon, url_name):
+    return {"title": title, "icon": icon, "link": reverse_lazy(url_name)}
+
+
+UNFOLD = {
+    "SITE_TITLE": "OzkExpress",
+    "SITE_HEADER": "OzkExpress",
+    "SITE_SUBHEADER": "Back-office",
+    "SITE_SYMBOL": "two_wheeler",
+    "SITE_URL": None,
+    "SHOW_VIEW_ON_SITE": False,
+    "DASHBOARD_CALLBACK": "apps.backoffice.dashboard.dashboard_callback",
+    "COLORS": {
+        # Orange OzkExpress (palette Tailwind « orange »)
+        "primary": {
+            "50": "oklch(98% .016 73.684)",
+            "100": "oklch(95.4% .038 75.164)",
+            "200": "oklch(90.1% .076 70.697)",
+            "300": "oklch(83.7% .128 66.29)",
+            "400": "oklch(75% .183 55.934)",
+            "500": "oklch(70.5% .213 47.604)",
+            "600": "oklch(64.6% .222 41.116)",
+            "700": "oklch(55.3% .195 38.402)",
+            "800": "oklch(47% .157 37.304)",
+            "900": "oklch(40.8% .123 38.172)",
+            "950": "oklch(26.6% .079 36.259)",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": False,
+        "navigation": [
+            {"items": [_nav("Tableau de bord", "dashboard", "admin:index")]},
+            {
+                "title": "Opérations",
+                "separator": True,
+                "items": [
+                    _nav("Livraisons", "package_2", "admin:services_servicerequest_changelist"),
+                    _nav("Courses", "local_taxi", "admin:services_riderequest_changelist"),
+                    _nav("Litiges", "gavel", "admin:disputes_dispute_changelist"),
+                    _nav("Locations de véhicules", "car_rental", "admin:fleet_vehiclerental_changelist"),
+                ],
+            },
+            {
+                "title": "Travailleurs",
+                "separator": True,
+                "items": [
+                    _nav("Coursiers", "two_wheeler", "admin:couriers_courier_changelist"),
+                    _nav("Chauffeurs", "directions_car", "admin:drivers_driver_changelist"),
+                    _nav("Documents", "badge", "admin:workforce_workerdocument_changelist"),
+                ],
+            },
+            {
+                "title": "Argent",
+                "separator": True,
+                "items": [
+                    _nav("Demandes de retrait", "account_balance", "admin:payments_withdrawalrequest_changelist"),
+                    _nav("Portefeuilles", "wallet", "admin:payments_wallet_changelist"),
+                    _nav("Transactions", "receipt_long", "admin:payments_transaction_changelist"),
+                    _nav("Gains coursiers", "payments", "admin:couriers_courierearning_changelist"),
+                    _nav("Gains chauffeurs", "payments", "admin:drivers_driverearning_changelist"),
+                ],
+            },
+            {
+                "title": "Tarifs & flotte",
+                "separator": True,
+                "items": [
+                    _nav("Quartiers", "location_city", "admin:services_zone_changelist"),
+                    _nav("Distances entre quartiers", "straighten", "admin:services_zonedistance_changelist"),
+                    _nav("Véhicules de la flotte", "garage", "admin:fleet_vehicle_changelist"),
+                ],
+            },
+            {
+                "title": "Comptes",
+                "separator": True,
+                "items": [
+                    _nav("Utilisateurs", "group", "admin:accounts_user_changelist"),
+                    _nav("Groupes & droits", "admin_panel_settings", "admin:auth_group_changelist"),
+                ],
+            },
+        ],
+    },
+}
